@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,7 +47,7 @@ fun PermissionSetupScreen(navController: NavController) {
         Manifest.permission.READ_CONTACTS
     )
     
-    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         permissions.add(Manifest.permission.READ_PHONE_NUMBERS)
     }
     
@@ -132,6 +133,7 @@ fun PermissionSetupScreen(navController: NavController) {
         
         val permissionItems = listOf(
             Icons.Default.Phone to "Phone — Detect incoming & outgoing calls",
+            Icons.Default.Phone to "Phone Numbers — Read SIM phone numbers",
             Icons.AutoMirrored.Filled.ListAlt to "Call Log — Read call history details",
             Icons.Default.Mic to "Microphone — Record call audio",
             Icons.Default.Person to "Contacts — Identify caller names",

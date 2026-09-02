@@ -2,18 +2,19 @@ package com.mistavinya.smac.ui.profile
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -23,6 +24,7 @@ import com.mistavinya.smac.util.DeviceInfoUtil
 @Composable
 fun DeviceInfoScreen(navController: NavController) {
     val context = LocalContext.current
+    val deviceInfo = remember { DeviceInfoUtil.getAllDeviceInfo(context) }
     
     Scaffold(
         topBar = {
@@ -43,6 +45,7 @@ fun DeviceInfoScreen(navController: NavController) {
                 .background(MaterialTheme.colorScheme.background)
                 .padding(padding)
                 .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(24.dp))
             
@@ -71,7 +74,7 @@ fun DeviceInfoScreen(navController: NavController) {
             Text(
                 "Mist Avinya Technologies",
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onBackground
@@ -96,14 +99,27 @@ fun DeviceInfoScreen(navController: NavController) {
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    DeviceInfoRow("IMEI / DEVICE ID", DeviceInfoUtil.getImei(context))
+                    DeviceInfoRow("SERIAL NUMBER (PK)", deviceInfo.serialNumber)
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    DeviceInfoRow("SERIAL NUMBER", DeviceInfoUtil.getSerialNumber(context))
+                    
+                    DeviceInfoRow("IMEI 1 (SIM 1)", deviceInfo.imei1)
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    DeviceInfoRow("DEVICE MODEL", DeviceInfoUtil.getDeviceModel())
+                    
+                    DeviceInfoRow("IMEI 2 (SIM 2)", deviceInfo.imei2?.ifBlank { "N/A" } ?: "N/A")
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    DeviceInfoRow("ANDROID VERSION", DeviceInfoUtil.getAndroidVersion())
+                    
+                    DeviceInfoRow("PHONE NUMBER 1", deviceInfo.phoneNumber1.ifBlank { "Not available" })
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    
+                    DeviceInfoRow("PHONE NUMBER 2", deviceInfo.phoneNumber2?.ifBlank { "Not available" } ?: "N/A")
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    
+                    DeviceInfoRow("DEVICE MODEL", deviceInfo.deviceModel)
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    
+                    DeviceInfoRow("ANDROID VERSION", deviceInfo.androidVersion)
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    
                     DeviceInfoRow("APP VERSION", "1.0.0")
                 }
             }
@@ -131,6 +147,8 @@ fun DeviceInfoScreen(navController: NavController) {
                     )
                 }
             }
+            
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

@@ -20,6 +20,7 @@ import com.mistavinya.smac.storage.LocalStorageManager
 import com.mistavinya.smac.ui.navigation.MainScreen
 import com.mistavinya.smac.ui.navigation.Screen
 import com.mistavinya.smac.ui.theme.CallSyncTheme
+import com.mistavinya.smac.util.DeviceInfoUtil
 import com.mistavinya.smac.util.PermissionUtils
 import com.mistavinya.smac.util.SettingsDataStore
 import com.mistavinya.smac.util.ThemePreferences
@@ -39,6 +40,8 @@ class MainActivity : ComponentActivity() {
 
             enableEdgeToEdge()
             Log.i("CALLSYNC_DEBUG", "enableEdgeToEdge() done")
+
+            DeviceInfoUtil.logAllDeviceInfo(this)
             
             // Initialize storage structure
             LocalStorageManager(this)

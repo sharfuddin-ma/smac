@@ -19,10 +19,10 @@ object PermissionUtils {
             Manifest.permission.READ_CONTACTS
         )
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             runtimePermissions.add(Manifest.permission.READ_PHONE_NUMBERS)
         }
-        
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             runtimePermissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
