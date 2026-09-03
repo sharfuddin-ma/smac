@@ -66,7 +66,8 @@ interface CallLogDao {
             has_recording = :hasRecording, 
             local_recording_path = :localRecordingPath,
             recording_file_name = :recordingFileName,
-            recording_file_size_bytes = :recordingFileSizeBytes 
+            recording_file_size_bytes = :recordingFileSizeBytes,
+            updated_at = :updatedAt
         WHERE id = :callId
     """)
     suspend fun updateRecording(
@@ -74,6 +75,7 @@ interface CallLogDao {
         hasRecording: Boolean,
         localRecordingPath: String?,
         recordingFileName: String?,
-        recordingFileSizeBytes: Long
+        recordingFileSizeBytes: Long,
+        updatedAt: Long = System.currentTimeMillis()
     )
 }

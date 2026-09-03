@@ -89,7 +89,7 @@ fun SplashScreen(navController: NavController) {
 
             @Suppress("DEPRECATION")
             Text(
-                text = "CallSync",
+                text = "SalesEdgeAI",
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.SemiBold

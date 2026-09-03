@@ -25,4 +25,7 @@ interface CallRecordingDao {
 
     @Query("UPDATE call_recordings SET is_synced = 1, updated_at = :updatedAt WHERE id = :id")
     suspend fun markSynced(id: String, updatedAt: Long = System.currentTimeMillis())
+
+    @Query("DELETE FROM call_recordings WHERE call_log_id = :callLogId")
+    suspend fun deleteByCallLogId(callLogId: String)
 }

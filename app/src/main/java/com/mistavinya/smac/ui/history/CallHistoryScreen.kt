@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.CallMade
@@ -125,7 +127,7 @@ fun CallHistoryScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("Call History", fontWeight = FontWeight.SemiBold, fontSize = 20.sp) },
+                    title = { Text("SalesEdgeAI", fontWeight = FontWeight.SemiBold, fontSize = 20.sp) },
                     actions = {
                         IconButton(onClick = { isSearchActive = !isSearchActive }) {
                             Icon(Icons.Default.Search, contentDescription = "Search")
@@ -338,7 +340,7 @@ fun CallHistoryItemCard(
                     
                     Text(
                         text = "$displayNumber • ${DurationUtils.formatDuration(call.durationSeconds)}",
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     
@@ -349,7 +351,7 @@ fun CallHistoryItemCard(
                             "MISSED"   -> "✕ Missed"
                             else -> call.callDirection.lowercase().replaceFirstChar { it.uppercase() }
                         },
-                        fontSize = 11.sp,
+                        fontSize = 13.sp,
                         color = when (call.callDirection) {
                             "OUTGOING" -> MaterialTheme.colorScheme.primary
                             "INCOMING" -> Color(0xFF4CAF50)
@@ -475,8 +477,8 @@ fun HistoryCategoryBadge(category: String) {
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            fontSize = 10.sp,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            fontSize = 13.sp,
             color = textColor,
             fontWeight = FontWeight.Bold
         )
@@ -509,36 +511,45 @@ fun CallDetailsContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(24.dp)
             .padding(bottom = 32.dp)
     ) {
-        Text(text = "Call Details", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(modifier = Modifier.height(24.dp))
+        // ═══ SCROLLABLE CONTENT ═══
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp)
+        ) {
+            Text(text = "Call Details", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.height(24.dp))
 
-        DetailRow("NAME", call.contactName ?: "Unknown")
-        DetailRow("CALLER", call.callerNumber)
-        DetailRow("CALLEE", call.calleeNumber)
-        DetailRow("TYPE", call.callDirection.replaceFirstChar { it.uppercase() })
-        DetailRow("DURATION", DurationUtils.formatDuration(call.durationSeconds))
-        DetailRow("CATEGORY", call.callCategory.uppercase())
+            DetailRow("NAME", call.contactName ?: "Unknown")
+            DetailRow("CALLER", call.callerNumber)
+            DetailRow("CALLEE", call.calleeNumber)
+            DetailRow("TYPE", call.callDirection.replaceFirstChar { it.uppercase() })
+            DetailRow("DURATION", DurationUtils.formatDuration(call.durationSeconds))
+            DetailRow("CATEGORY", call.callCategory.uppercase())
 
-        formData?.let { form ->
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("FORM DATA", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
-            Spacer(modifier = Modifier.height(12.dp))
-            DetailRow("COMPANY", form.companyName)
-            DetailRow("CUSTOMER", form.customerName)
-            form.reasonForCall?.let { if (it.isNotBlank()) DetailRow("REASON", it) }
-            form.notes?.let { if (it.isNotBlank()) DetailRow("NOTES", it) }
+            formData?.let { form ->
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("FORM DATA", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
+                Spacer(modifier = Modifier.height(12.dp))
+                DetailRow("COMPANY", form.companyName)
+                DetailRow("CUSTOMER", form.customerName)
+                form.reasonForCall?.let { if (it.isNotBlank()) DetailRow("REASON", it) }
+                form.notes?.let { if (it.isNotBlank()) DetailRow("NOTES", it) }
+            }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-        // Bottom action buttons
+        // ═══ FIXED BOTTOM BUTTONS ═══
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Play Recording Button

@@ -3,6 +3,7 @@ package com.mistavinya.smac.ui.classification
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -41,7 +42,7 @@ import com.mistavinya.smac.data.CallSyncDatabase
 import com.mistavinya.smac.data.entity.CallFormDataEntity
 import com.mistavinya.smac.data.entity.CallRecordingEntity
 import com.mistavinya.smac.data.entity.UploadQueueEntity
-import com.mistavinya.smac.ui.theme.CallSyncTheme
+import com.mistavinya.smac.ui.theme.SalesEdgeAITheme
 import com.mistavinya.smac.util.DeviceInfoUtil
 import com.mistavinya.smac.util.SamsungRecordingFinder
 import kotlinx.coroutines.Dispatchers
@@ -77,7 +78,7 @@ class ClassificationActivity : ComponentActivity() {
         })
         
         setContent {
-            CallSyncTheme {
+            SalesEdgeAITheme {
                 ClassificationScreen(
                     callLogId = callLogId,
                     phoneNumber = phoneNumber,
@@ -347,7 +348,23 @@ private fun handleSelection(context: android.content.Context, scope: kotlinx.cor
         db.callLogDao().updateCategory(callLogId, category, formRequired = category == "CLIENT", hasRecording = shouldFindRecording)
         db.uploadQueueDao().insert(UploadQueueEntity(callLogLocalId = callLogId, uploadType = "CALL_LOG", payload = "{}"))
         
-        if (shouldFindRecording) {
+        if (category == "PERSONAL") {
+            // ═══ PERSONAL — Remove any recording reference ═══
+            try {
+                db.callRecordingDao().deleteByCallLogId(callLogId)
+                db.callLogDao().updateRecording(
+                    callId = callLogId,
+                    hasRecording = false,
+                    localRecordingPath = null,
+                    recordingFileName = null,
+                    recordingFileSizeBytes = 0
+                )
+                db.uploadQueueDao().deleteByCallLogIdAndType(callLogId, "RECORDING")
+                Log.i("Classification", "🗑️ PERSONAL — recording reference removed for $callLogId")
+            } catch (e: Exception) {
+                Log.w("Classification", "No recording to remove: ${e.message}")
+            }
+        } else if (shouldFindRecording) {
             val recordingFile = SamsungRecordingFinder.findRecording(phoneNumber, System.currentTimeMillis())
             if (recordingFile != null) {
                 db.callRecordingDao().insert(CallRecordingEntity(callLogId = callLogId, deviceSerial = DeviceInfoUtil.getSerialNumber(), localFilePath = recordingFile.absolutePath, fileSizeBytes = recordingFile.length()))

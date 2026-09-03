@@ -28,4 +28,7 @@ interface UploadQueueDao {
 
     @Query("DELETE FROM upload_queue WHERE status = 'COMPLETED'")
     suspend fun deleteCompleted()
+
+    @Query("DELETE FROM upload_queue WHERE call_log_local_id = :callLogId AND upload_type = :type")
+    suspend fun deleteByCallLogIdAndType(callLogId: String, type: String)
 }

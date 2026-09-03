@@ -243,7 +243,7 @@ fun SettingsScreen(navController: NavController) {
                 SectionHeader("ABOUT")
                 SettingsItem(
                     icon = Icons.Default.Info,
-                    title = "About CallSync",
+                    title = "About SalesEdgeAI",
                     subtitle = "Version 1.0.0",
                     onClick = { showAboutDialog = true }
                 )
@@ -327,7 +327,7 @@ fun SettingsScreen(navController: NavController) {
     if (showAboutDialog) {
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
-            title = { Text("CallSync", fontWeight = FontWeight.SemiBold) },
+            title = { Text("SalesEdgeAI", fontWeight = FontWeight.SemiBold) },
             text = {
                 Column {
                     Text("Version 1.0.0", fontSize = 14.sp)

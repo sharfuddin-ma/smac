@@ -47,7 +47,7 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 @Composable
-fun CallSyncTheme(
+fun SalesEdgeAITheme(
     darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {

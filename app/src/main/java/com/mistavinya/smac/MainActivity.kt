@@ -19,7 +19,7 @@ import com.mistavinya.smac.service.CallRecordingService
 import com.mistavinya.smac.storage.LocalStorageManager
 import com.mistavinya.smac.ui.navigation.MainScreen
 import com.mistavinya.smac.ui.navigation.Screen
-import com.mistavinya.smac.ui.theme.CallSyncTheme
+import com.mistavinya.smac.ui.theme.SalesEdgeAITheme
 import com.mistavinya.smac.util.DeviceInfoUtil
 import com.mistavinya.smac.util.PermissionUtils
 import com.mistavinya.smac.util.SettingsDataStore
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
                 Log.i("CALLSYNC_DEBUG", "setContent starting")
                 val isDarkMode by themePreferences.isDarkMode.collectAsState(initial = false)
                 
-                CallSyncTheme(darkTheme = isDarkMode) {
+                SalesEdgeAITheme(darkTheme = isDarkMode) {
                     MainScreen(
                         startDestination = if (navigateTo == "client_form") Screen.ClientForm.route else Screen.Splash.route,
                         startCallLogId = callLogId
@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
             
             // Show a basic error screen instead of crashing
             setContent {
-                CallSyncTheme {
+                SalesEdgeAITheme {
                     Surface {
                         Text(
                             text = "App Error: ${e.message}\n\nPlease report this to the developer.",

@@ -67,7 +67,7 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Text(
-                        "CallSync",
+                        "SalesEdgeAI",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -396,7 +396,7 @@ fun CallItemCard(
                             append(" · $displayNumber")
                         }
                     },
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     color = when (callLog.callDirection) {
                         "OUTGOING" -> MaterialTheme.colorScheme.primary
                         "INCOMING" -> Color(0xFF4CAF50)
@@ -430,9 +430,9 @@ fun CallItemCard(
                                 "MISSED" -> "Missed"
                                 else -> ""
                             },
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = when (callLog.callCategory) {
                                 "CLIENT" -> Color(0xFF1976D2)
                                 "TEAM_MEMBER" -> Color(0xFF4CAF50)

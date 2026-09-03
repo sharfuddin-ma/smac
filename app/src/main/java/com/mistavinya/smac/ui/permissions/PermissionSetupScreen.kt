@@ -163,7 +163,7 @@ fun PermissionSetupScreen(navController: NavController) {
         Spacer(Modifier.height(12.dp))
 
         Text(
-            "CallSync needs the following permissions to manage your business calls. These are mandatory for the app to function.",
+            "SalesEdgeAI needs the following permissions to manage your business calls. These are mandatory for the app to function.",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

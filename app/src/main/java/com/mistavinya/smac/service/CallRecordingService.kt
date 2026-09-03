@@ -190,7 +190,7 @@ class CallRecordingService : Service() {
     }
 
     private fun startForegroundSafely(isCallActive: Boolean) {
-        val title = if (isCallActive) "Call Active" else "CallSync"
+        val title = if (isCallActive) "Call Active" else "SalesEdgeAI"
         val text = if (isCallActive) "Active call — $savedRemoteNumber" else "Monitoring calls for recording"
         val notification = createNotification(title, text)
 
@@ -265,6 +265,13 @@ class CallRecordingService : Service() {
                 handler.postDelayed({
                     serviceScope.launch {
                         try {
+                            // Check if call was already classified as PERSONAL — skip recording link
+                            val currentCallLog = CallSyncDatabase.getInstance(applicationContext).callLogDao().getById(callLogId)
+                            if (currentCallLog?.callCategory == "PERSONAL") {
+                                Log.i(TAG, "⏭️ Skipping recording link — call classified as PERSONAL")
+                                return@launch
+                            }
+
                             val folderUri = settingsDataStore.getRecordingFolderUri()
                             Log.i(TAG, "Recording folder URI: ${folderUri.ifBlank { "NOT SET" }}")
                             if (folderUri.isNotBlank()) {
@@ -358,7 +365,7 @@ class CallRecordingService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Call Monitoring",
+                "SalesEdgeAI Call Monitoring",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Monitoring calls for recording"
