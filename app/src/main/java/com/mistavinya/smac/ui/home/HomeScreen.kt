@@ -35,6 +35,7 @@ import com.mistavinya.smac.ui.history.CallDetailsContent
 import com.mistavinya.smac.ui.navigation.Screen
 import com.mistavinya.smac.util.DateUtils
 import com.mistavinya.smac.util.DurationUtils
+import com.mistavinya.smac.util.SettingsDataStore
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,38 +43,23 @@ fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = viewModel(factory = HomeViewModelFactory(LocalContext.current))
 ) {
+    val context = LocalContext.current
     val todayCount by viewModel.todayCallCount.collectAsState()
     val savedCount by viewModel.savedRecordingsCount.collectAsState()
     val totalCount by viewModel.totalRecordingsCount.collectAsState()
-    val recentCalls by viewModel.recentCalls.collectAsState(initial = emptyList())
+    val recentCalls by viewModel.recentCalls.collectAsState()
     val playbackInfo = viewModel.playbackInfo
 
-    val context = LocalContext.current
-    var showExitDialog by remember { mutableStateOf(false) }
+    val settingsDataStore = remember { SettingsDataStore(context) }
+    val devicePhone1 by settingsDataStore.phoneNumber1.collectAsState(initial = "")
+    val devicePhone2 by settingsDataStore.phoneNumber2.collectAsState(initial = "")
+
     var selectedCallForDetails by remember { mutableStateOf<CallLogEntity?>(null) }
     var showDeleteConfirmation by remember { mutableStateOf<CallLogEntity?>(null) }
     val sheetState = rememberModalBottomSheetState()
 
     BackHandler {
-        showExitDialog = true
-    }
-
-    if (showExitDialog) {
-        AlertDialog(
-            onDismissRequest = { showExitDialog = false },
-            title = { Text("Exit App?", fontSize = 18.sp, fontWeight = FontWeight.SemiBold) },
-            text = { Text("Are you sure you want to close CallSync?", fontSize = 14.sp) },
-            confirmButton = {
-                TextButton(onClick = { (context as? Activity)?.finish() }) {
-                    Text("Exit", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showExitDialog = false }) {
-                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-        )
+        (context as? Activity)?.finish()
     }
 
     Scaffold(
@@ -111,12 +97,15 @@ fun HomeScreen(
             )
         },
         bottomBar = {
-            if (playbackInfo.callLogId != -1L) {
+            if (playbackInfo.callLogIdString.isNotEmpty()) {
                 AudioPlayerBar(
                     playbackInfo = playbackInfo,
                     onPlayPause = {
                         if (playbackInfo.isPlaying) viewModel.pauseRecording()
-                        else viewModel.playRecording(recentCalls.find { it.id == playbackInfo.callLogId }!!)
+                        else {
+                            val call = recentCalls.find { it.id == playbackInfo.callLogIdString }
+                            if (call != null) viewModel.playRecording(call)
+                        }
                     },
                     onClose = { viewModel.stopPlayback() }
                 )
@@ -144,7 +133,6 @@ fun HomeScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Green dot indicator
                         Surface(
                             modifier = Modifier.size(8.dp),
                             shape = CircleShape,
@@ -171,22 +159,6 @@ fun HomeScreen(
                             tint = Color(0xFF4CAF50)
                         )
                     }
-                }
-            }
-
-            // Recording Tip
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-                ) {
-                    Text(
-                        text = "Tip: For best recording quality, use speaker mode during calls.",
-                        modifier = Modifier.padding(12.dp),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
                 }
             }
             
@@ -267,6 +239,8 @@ fun HomeScreen(
                 items(recentCalls) { call ->
                     CallItemCard(
                         callLog = call,
+                        devicePhone1 = devicePhone1,
+                        devicePhone2 = devicePhone2,
                         onClick = { selectedCallForDetails = call }
                     )
                 }
@@ -282,6 +256,7 @@ fun HomeScreen(
             ) {
                 CallDetailsContent(
                     call = selectedCallForDetails!!,
+                    getFormData = { viewModel.getFormData(it) },
                     onPlay = { 
                         viewModel.playRecording(selectedCallForDetails!!)
                         selectedCallForDetails = null 
@@ -345,7 +320,14 @@ private fun StatCard(modifier: Modifier, value: String, label: String) {
 }
 
 @Composable
-fun CallItemCard(callLog: CallLogEntity, onClick: () -> Unit) {
+fun CallItemCard(
+    callLog: CallLogEntity, 
+    devicePhone1: String,
+    devicePhone2: String,
+    onClick: () -> Unit
+) {
+    val displayNumber = getDisplayNumber(callLog, devicePhone1, devicePhone2)
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -357,31 +339,30 @@ fun CallItemCard(callLog: CallLogEntity, onClick: () -> Unit) {
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Call type icon
             Surface(
                 modifier = Modifier.size(40.dp),
                 shape = CircleShape,
-                color = when (callLog.callType) {
-                    "outgoing" -> Color(0xFF1976D2).copy(alpha = 0.1f)
-                    "incoming" -> Color(0xFF4CAF50).copy(alpha = 0.1f)
-                    "missed" -> Color(0xFFEF5350).copy(alpha = 0.1f)
+                color = when (callLog.callDirection) {
+                    "OUTGOING" -> Color(0xFF1976D2).copy(alpha = 0.1f)
+                    "INCOMING" -> Color(0xFF4CAF50).copy(alpha = 0.1f)
+                    "MISSED" -> Color(0xFFEF5350).copy(alpha = 0.1f)
                     else -> MaterialTheme.colorScheme.surfaceVariant
                 }
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = when (callLog.callType) {
-                            "outgoing" -> Icons.AutoMirrored.Filled.CallMade
-                            "incoming" -> Icons.AutoMirrored.Filled.CallReceived
-                            "missed" -> Icons.Default.PhoneMissed
+                        imageVector = when (callLog.callDirection) {
+                            "OUTGOING" -> Icons.AutoMirrored.Filled.CallMade
+                            "INCOMING" -> Icons.AutoMirrored.Filled.CallReceived
+                            "MISSED" -> Icons.Default.PhoneMissed
                             else -> Icons.Default.Phone
                         },
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = when (callLog.callType) {
-                            "outgoing" -> Color(0xFF1976D2)
-                            "incoming" -> Color(0xFF4CAF50)
-                            "missed" -> Color(0xFFEF5350)
+                        tint = when (callLog.callDirection) {
+                            "OUTGOING" -> Color(0xFF1976D2)
+                            "INCOMING" -> Color(0xFF4CAF50)
+                            "MISSED" -> Color(0xFFEF5350)
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
@@ -390,12 +371,11 @@ fun CallItemCard(callLog: CallLogEntity, onClick: () -> Unit) {
             
             Spacer(Modifier.width(12.dp))
             
-            // Name and number
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    callLog.contactName ?: callLog.phoneNumber,
+                    callLog.contactName ?: displayNumber,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -403,51 +383,79 @@ fun CallItemCard(callLog: CallLogEntity, onClick: () -> Unit) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     buildString {
-                        append(callLog.callType.replaceFirstChar { it.uppercase() })
+                        append(when (callLog.callDirection) {
+                            "OUTGOING" -> "↗ Outgoing"
+                            "INCOMING" -> "↙ Incoming"
+                            "MISSED"   -> "✕ Missed"
+                            else -> callLog.callDirection.lowercase().replaceFirstChar { it.uppercase() }
+                        })
                         if (callLog.durationSeconds > 0) {
                             append(" · ${DurationUtils.formatDuration(callLog.durationSeconds)}")
                         }
+                        if (displayNumber.isNotEmpty()) {
+                            append(" · $displayNumber")
+                        }
                     },
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = when (callLog.callDirection) {
+                        "OUTGOING" -> MaterialTheme.colorScheme.primary
+                        "INCOMING" -> Color(0xFF4CAF50)
+                        "MISSED"   -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
             
-            // Time and category
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     DateUtils.formatRelativeTime(callLog.createdAt),
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (callLog.category != null) {
+                if (callLog.callCategory != "PENDING") {
                     Spacer(Modifier.height(4.dp))
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = when (callLog.category) {
-                            "client" -> Color(0xFF1976D2).copy(alpha = 0.1f)
-                            "team_member" -> Color(0xFF4CAF50).copy(alpha = 0.1f)
+                        color = when (callLog.callCategory) {
+                            "CLIENT" -> Color(0xFF1976D2).copy(alpha = 0.1f)
+                            "TEAM_MEMBER" -> Color(0xFF4CAF50).copy(alpha = 0.1f)
                             else -> MaterialTheme.colorScheme.surfaceVariant
                         }
                     ) {
                         Text(
-                            when (callLog.category) {
-                                "client" -> "Client"
-                                "team_member" -> "Team"
-                                "personal" -> "Personal"
+                            when (callLog.callCategory) {
+                                "CLIENT" -> "Client"
+                                "TEAM_MEMBER" -> "Team"
+                                "PERSONAL" -> "Personal"
+                                "MISSED" -> "Missed"
                                 else -> ""
                             },
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
-                            color = when (callLog.category) {
-                                "client" -> Color(0xFF1976D2)
-                                "team_member" -> Color(0xFF4CAF50)
+                            color = when (callLog.callCategory) {
+                                "CLIENT" -> Color(0xFF1976D2)
+                                "TEAM_MEMBER" -> Color(0xFF4CAF50)
+                                "MISSED" -> Color(0xFFD32F2F)
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+fun getDisplayNumber(callLog: CallLogEntity, devicePhone1: String, devicePhone2: String): String {
+    return when (callLog.callDirection) {
+        "OUTGOING" -> callLog.calleeNumber
+        "INCOMING", "MISSED" -> callLog.callerNumber
+        else -> {
+            when {
+                callLog.callerNumber == devicePhone1 || callLog.callerNumber == devicePhone2 -> callLog.calleeNumber
+                callLog.calleeNumber == devicePhone1 || callLog.calleeNumber == devicePhone2 -> callLog.callerNumber
+                else -> callLog.callerNumber
             }
         }
     }

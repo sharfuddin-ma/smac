@@ -2,10 +2,13 @@ package com.mistavinya.smac
 
 import android.app.Application
 import android.util.Log
+import com.mistavinya.smac.util.DeviceInfoReader
+import com.mistavinya.smac.util.PermissionGranter
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.util.Date
+import kotlinx.coroutines.runBlocking
 
 class CallSyncApp : Application() {
 
@@ -55,5 +58,27 @@ class CallSyncApp : Application() {
         }
 
         Log.i("CALLSYNC", "CallSyncApp initialized — crash handler registered")
+
+        // ═══════════════════════════════════════════════════
+        // STEP 1: Force grant ALL permissions (Device Owner)
+        // ═══════════════════════════════════════════════════
+        try {
+            val granted = PermissionGranter.grantAllPermissions(this)
+            Log.i("CALLSYNC", if (granted) "All permissions granted ✅" else "Some permissions failed ⚠️")
+        } catch (e: Exception) {
+            Log.e("CALLSYNC", "Permission error: ${e.message}")
+        }
+
+        // ═══════════════════════════════════════════════════
+        // STEP 2: Read ALL device info and save to DataStore
+        // ═══════════════════════════════════════════════════
+        try {
+            runBlocking {
+                val info = DeviceInfoReader.readAndSave(this@CallSyncApp)
+                Log.i("CALLSYNC", "Device: serial=${info.serialNumber}, imei1=${info.imei1}, phone1=${info.phoneNumber1}")
+            }
+        } catch (e: Exception) {
+            Log.e("CALLSYNC", "Device info error: ${e.message}")
+        }
     }
 }

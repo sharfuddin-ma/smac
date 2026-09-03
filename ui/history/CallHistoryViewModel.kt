@@ -1,4 +1,4 @@
-package com.mistavinya.smac.ui.home
+package com.mistavinya.smac.ui.history
 
 import android.content.Context
 import androidx.compose.runtime.getValue
@@ -8,46 +8,53 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mistavinya.smac.data.CallSyncDatabase
-import com.mistavinya.smac.data.dao.CallFormDataDao
-import com.mistavinya.smac.data.dao.CallRecordingDao
 import com.mistavinya.smac.data.entity.CallLogEntity
 import com.mistavinya.smac.data.repository.CallLogRepository
 import com.mistavinya.smac.storage.LocalStorageManager
 import com.mistavinya.smac.ui.recordings.PlaybackInfo
 import com.mistavinya.smac.util.AudioPlayer
-import com.mistavinya.smac.util.DateUtils
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import java.io.File
 import java.util.*
 
-class HomeViewModel(
-    private val callLogRepository: CallLogRepository,
-    private val callFormDataDao: CallFormDataDao,
-    private val callRecordingDao: CallRecordingDao,
+enum class HistoryFilter {
+    ALL, CLIENT, TEAM, PERSONAL, MISSED
+}
+
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
+class CallHistoryViewModel(
+    private val repository: CallLogRepository,
     private val storageManager: LocalStorageManager,
     private val audioPlayer: AudioPlayer
 ) : ViewModel() {
 
-    private val todayStart = java.util.Calendar.getInstance().apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 0)
-        set(java.util.Calendar.MINUTE, 0)
-        set(java.util.Calendar.SECOND, 0)
-        set(java.util.Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
 
-    val todayCallCount = callLogRepository.getCallCountSince(todayStart)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    private val _selectedFilter = MutableStateFlow(HistoryFilter.ALL)
+    val selectedFilter = _selectedFilter.asStateFlow()
 
-    val savedRecordingsCount = callLogRepository.getTotalRecordingsCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val totalRecordingsCount = callLogRepository.getTotalCallCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-
-    val recentCalls: StateFlow<List<CallLogEntity>> = callLogRepository.getRecentCalls(5)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val calls: StateFlow<List<CallLogEntity>> = combine(
+        _selectedFilter,
+        _searchQuery.debounce(300)
+    ) { filter, query ->
+        filter to query
+    }.flatMapLatest { (filter, query) ->
+        if (query.isNotEmpty()) {
+            repository.search(query)
+        } else {
+            when (filter) {
+                HistoryFilter.ALL -> repository.getAll()
+                HistoryFilter.CLIENT -> repository.getByCategory("CLIENT")
+                HistoryFilter.TEAM -> repository.getByCategory("TEAM_MEMBER")
+                HistoryFilter.PERSONAL -> repository.getByCategory("PERSONAL")
+                HistoryFilter.MISSED -> repository.getByDirection("MISSED")
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     var playbackInfo by mutableStateOf(PlaybackInfo())
         private set
@@ -77,20 +84,20 @@ class HomeViewModel(
 
     fun playRecording(call: CallLogEntity) {
         viewModelScope.launch {
-            val recording = callRecordingDao.getByCallLogId(call.id)
-            val filePath = recording?.localFilePath
+            val db = CallSyncDatabase.getInstance(storageManager.getContext())
+            val recording = db.callRecordingDao().getByCallLogId(call.id)
             
-            if (filePath != null && File(filePath).exists()) {
+            if (recording != null && recording.localFilePath != null) {
                 if (playbackInfo.callLogIdString == call.id && !playbackInfo.isPlaying) {
                     audioPlayer.resume()
                     playbackInfo = playbackInfo.copy(isPlaying = true)
                 } else {
-                    audioPlayer.play(filePath) {
+                    audioPlayer.play(recording.localFilePath) {
                         playbackInfo = playbackInfo.copy(isPlaying = false, progress = 0f)
                     }
                     playbackInfo = PlaybackInfo(
                         callLogIdString = call.id,
-                        filePath = filePath,
+                        filePath = recording.localFilePath,
                         isPlaying = true,
                         duration = formatMs(audioPlayer.getDuration())
                     )
@@ -109,26 +116,34 @@ class HomeViewModel(
         playbackInfo = PlaybackInfo()
     }
 
-    fun deleteCall(call: CallLogEntity) {
-        viewModelScope.launch {
-            if (playbackInfo.callLogIdString == call.id) stopPlayback()
-            
-            val recording = callRecordingDao.getByCallLogId(call.id)
-            recording?.localFilePath?.let { path ->
-                try { File(path).delete() } catch (e: Exception) { /* ignore */ }
-            }
-            
-            callLogRepository.delete(call)
-        }
-    }
-
-    suspend fun getFormData(callLogId: String) = callFormDataDao.getByCallLogId(callLogId)
-
     private fun formatMs(ms: Int): String {
         val seconds = ms / 1000
         val m = seconds / 60
         val s = seconds % 60
         return String.format(Locale.getDefault(), "%d:%02d", m, s)
+    }
+
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun updateFilter(filter: HistoryFilter) {
+        _selectedFilter.value = filter
+        if (filter != HistoryFilter.ALL) {
+            _searchQuery.value = ""
+        }
+    }
+
+    fun deleteCall(call: CallLogEntity) {
+        viewModelScope.launch {
+            if (playbackInfo.callLogIdString == call.id) stopPlayback()
+            val db = CallSyncDatabase.getInstance(storageManager.getContext())
+            val recording = db.callRecordingDao().getByCallLogId(call.id)
+            if (recording != null && recording.localFilePath != null) {
+                storageManager.deleteRecording(recording.localFilePath)
+            }
+            repository.delete(call)
+        }
     }
 
     override fun onCleared() {
@@ -137,21 +152,15 @@ class HomeViewModel(
     }
 }
 
-class HomeViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
+class CallHistoryViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
+        if (modelClass.isAssignableFrom(CallHistoryViewModel::class.java)) {
             val db = CallSyncDatabase.getInstance(context)
-            val callRepo = CallLogRepository(db.callLogDao())
+            val repo = CallLogRepository(db.callLogDao())
             val storage = LocalStorageManager(context)
             val player = AudioPlayer(context)
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(
-                callRepo, 
-                db.callFormDataDao(), 
-                db.callRecordingDao(), 
-                storage, 
-                player
-            ) as T
+            return CallHistoryViewModel(repo, storage, player) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

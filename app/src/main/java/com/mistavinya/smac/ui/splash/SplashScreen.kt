@@ -1,5 +1,8 @@
 package com.mistavinya.smac.ui.splash
 
+import android.app.admin.DevicePolicyManager
+import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -20,31 +23,36 @@ import androidx.navigation.NavController
 import com.mistavinya.smac.ui.navigation.Screen
 import com.mistavinya.smac.util.PermissionUtils
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun SplashScreen(navController: NavController) {
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
-        try {
-            withTimeoutOrNull(4000) {
-                delay(2000)
-                val arePermissionsGranted = PermissionUtils.areAllPermissionsGranted(context)
-                
-                val targetRoute = if (arePermissionsGranted) Screen.Home.route else Screen.PermissionSetup.route
-                
-                navController.navigate(targetRoute) {
-                    popUpTo(Screen.Splash.route) { inclusive = true }
-                }
-            } ?: run {
+        delay(1500) // Splash delay
+
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+
+        if (dpm.isDeviceOwnerApp(context.packageName)) {
+            // ═══ DEVICE OWNER — Go directly to Home ═══
+            // Permissions are already forced in CallSyncApp.onCreate()
+            // Device info is already read and saved in CallSyncApp.onCreate()
+            // Nothing to setup — app is ready
+            Log.i("Navigation", "Device Owner → Home ✅")
+            navController.navigate(Screen.Home.route) {
+                popUpTo(Screen.Splash.route) { inclusive = true }
+            }
+        } else {
+            // ═══ NOT DEVICE OWNER — Development fallback ═══
+            val allGranted = PermissionUtils.areAllPermissionsGranted(context)
+            if (!allGranted) {
                 navController.navigate(Screen.PermissionSetup.route) {
                     popUpTo(Screen.Splash.route) { inclusive = true }
                 }
-            }
-        } catch (e: Exception) {
-            navController.navigate(Screen.PermissionSetup.route) {
-                popUpTo(Screen.Splash.route) { inclusive = true }
+            } else {
+                navController.navigate(Screen.Home.route) {
+                    popUpTo(Screen.Splash.route) { inclusive = true }
+                }
             }
         }
     }
@@ -79,6 +87,7 @@ fun SplashScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            @Suppress("DEPRECATION")
             Text(
                 text = "CallSync",
                 color = Color.White,
@@ -88,6 +97,7 @@ fun SplashScreen(navController: NavController) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            @Suppress("DEPRECATION")
             Text(
                 text = "Professional Call Management",
                 color = Color.White.copy(alpha = 0.7f),
@@ -95,6 +105,7 @@ fun SplashScreen(navController: NavController) {
             )
         }
 
+        @Suppress("DEPRECATION")
         Text(
             text = "Mist Avinya Technologies",
             color = Color.White.copy(alpha = 0.4f),

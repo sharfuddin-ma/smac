@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 
 class CallLogRepository(private val callLogDao: CallLogDao) {
 
-    suspend fun insert(callLog: CallLogEntity): Long = withContext(Dispatchers.IO) {
+    suspend fun insert(callLog: CallLogEntity) = withContext(Dispatchers.IO) {
         callLogDao.insert(callLog)
     }
 
@@ -20,41 +20,39 @@ class CallLogRepository(private val callLogDao: CallLogDao) {
         callLogDao.delete(callLog)
     }
 
-    suspend fun getById(id: Long): CallLogEntity? = withContext(Dispatchers.IO) {
+    suspend fun getById(id: String): CallLogEntity? = withContext(Dispatchers.IO) {
         callLogDao.getById(id)
     }
 
-    fun getAll(): Flow<List<CallLogEntity>> = callLogDao.getAll()
+    fun getAll(): Flow<List<CallLogEntity>> = callLogDao.getAllCallLogs()
 
     fun getByCategory(category: String): Flow<List<CallLogEntity>> = callLogDao.getByCategory(category)
 
-    fun searchByNameOrNumber(query: String): Flow<List<CallLogEntity>> = callLogDao.searchByNameOrNumber(query)
+    fun search(query: String): Flow<List<CallLogEntity>> = callLogDao.search(query)
 
-    suspend fun deleteById(id: Long) = withContext(Dispatchers.IO) {
-        callLogDao.deleteById(id)
+    fun getByDirection(direction: String): Flow<List<CallLogEntity>> = callLogDao.getByDirection(direction)
+
+    suspend fun getUnsynced(): List<CallLogEntity> = withContext(Dispatchers.IO) {
+        callLogDao.getUnsynced()
     }
 
-    fun getCallsByDate(date: String): Flow<List<CallLogEntity>> = callLogDao.getCallsByDate(date)
-
-    fun getRecentCalls(limit: Int): Flow<List<CallLogEntity>> = callLogDao.getRecentCalls(limit)
-
-    suspend fun getLastClientCallByNumber(phoneNumber: String): CallLogEntity? = withContext(Dispatchers.IO) {
-        callLogDao.getLastClientCallByNumber(phoneNumber)
+    suspend fun updateCategory(id: String, category: String, formRequired: Boolean, hasRecording: Boolean) = withContext(Dispatchers.IO) {
+        callLogDao.updateCategory(id, category, formRequired, hasRecording)
     }
 
-    fun getAllSavedRecordings(): Flow<List<CallLogEntity>> = callLogDao.getAllSavedRecordings()
-
-    fun getTodayCallCount(todayDate: String): Flow<Int> = callLogDao.getTodayCallCount(todayDate)
-
-    fun getTotalRecordingsCount(): Flow<Int> = callLogDao.getTotalRecordingsCount()
-
-    fun getByCallType(type: String): Flow<List<CallLogEntity>> = callLogDao.getByCallType(type)
-
-    suspend fun updateCategory(id: Long, category: String) = withContext(Dispatchers.IO) {
-        callLogDao.updateCategory(id, category)
+    suspend fun markFormSubmitted(id: String) = withContext(Dispatchers.IO) {
+        callLogDao.markFormSubmitted(id)
     }
 
-    suspend fun updateFilePath(id: Long, path: String) = withContext(Dispatchers.IO) {
-        callLogDao.updateFilePath(id, path)
+    suspend fun markSynced(id: String) = withContext(Dispatchers.IO) {
+        callLogDao.markSynced(id)
     }
+
+    // New convenience methods for UI stats
+    fun getTodayCallCount(date: String) = callLogDao.getTodayCallCount(date)
+    fun getCallCountSince(since: Long) = callLogDao.getCallCountSince(since)
+    fun getTotalCallCount() = callLogDao.getTotalCallCount()
+    fun getTotalRecordingsCount() = callLogDao.getTotalRecordingsCount()
+    fun getAllSavedRecordings() = callLogDao.getAllSavedRecordings()
+    fun getRecentCalls(limit: Int) = callLogDao.getRecentCalls(limit)
 }

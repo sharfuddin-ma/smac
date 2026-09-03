@@ -33,6 +33,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Ensure window adjusts for keyboard (needed for form screens)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
         try {
             Log.i("CALLSYNC_DEBUG", "MainActivity.onCreate() started")
             Log.i("CALLSYNC_DEBUG", "Device: ${Build.MANUFACTURER} ${Build.MODEL}")
@@ -49,7 +52,7 @@ class MainActivity : ComponentActivity() {
             val themePreferences = ThemePreferences(this)
             
             val navigateTo = intent.getStringExtra("navigate_to") ?: "splash"
-            val callLogId = intent.getLongExtra("call_log_id", -1L).takeIf { it != -1L }
+            val callLogId = intent.getStringExtra("call_log_id")
             
             setContent {
                 Log.i("CALLSYNC_DEBUG", "setContent starting")
@@ -64,6 +67,9 @@ class MainActivity : ComponentActivity() {
             }
 
             Log.i("CALLSYNC_DEBUG", "MainActivity.onCreate() completed successfully")
+
+            // Start call monitoring service immediately
+            checkAndStartService()
 
         } catch (e: Exception) {
             Log.e("CALLSYNC_CRASH", "CRASH in onCreate: ${e.javaClass.simpleName}: ${e.message}")
@@ -89,18 +95,43 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndStartService() {
-        lifecycleScope.launch {
-            try {
-                if (PermissionUtils.areAllPermissionsGranted(this@MainActivity)) {
-                    val intent = Intent(this@MainActivity, CallRecordingService::class.java).apply {
-                        action = CallRecordingService.ACTION_START_MONITORING
+        try {
+            val dpm = getSystemService(android.content.Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+
+            if (dpm.isDeviceOwnerApp(packageName)) {
+                // ═══ MDM DEVICE OWNER ═══
+                // All permissions are force-granted. No checks needed. Start service directly.
+                Log.i("CALLSYNC_DEBUG", "MDM Device Owner ✅ — starting CallRecordingService directly")
+                startCallService()
+            } else {
+                // ═══ NON-DEVICE OWNER (Development/Testing only) ═══
+                lifecycleScope.launch {
+                    if (PermissionUtils.areAllPermissionsGranted(this@MainActivity)) {
+                        Log.i("CALLSYNC_DEBUG", "Permissions granted ✅ — starting CallRecordingService")
+                        startCallService()
+                    } else {
+                        Log.w("CALLSYNC_DEBUG", "⚠️ Permissions NOT granted — service NOT started")
                     }
-                    startForegroundService(intent)
-                    Log.i("CALLSYNC_DEBUG", "startForegroundService(ACTION_START_MONITORING) called")
                 }
-            } catch (e: Exception) {
-                Log.e("CALLSYNC_CRASH", "Error starting service in onResume: ${e.message}")
             }
+        } catch (e: Exception) {
+            Log.e("CALLSYNC_DEBUG", "❌ checkAndStartService error: ${e.message}", e)
+        }
+    }
+
+    private fun startCallService() {
+        try {
+            val serviceIntent = Intent(this, CallRecordingService::class.java).apply {
+                action = CallRecordingService.ACTION_START_MONITORING
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            Log.i("CALLSYNC_DEBUG", "✅ CallRecordingService started successfully")
+        } catch (e: Exception) {
+            Log.e("CALLSYNC_DEBUG", "❌ Failed to start CallRecordingService: ${e.message}", e)
         }
     }
 }

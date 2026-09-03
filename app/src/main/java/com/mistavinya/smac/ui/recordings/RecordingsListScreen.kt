@@ -45,16 +45,20 @@ fun RecordingsListScreen(
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         },
         bottomBar = {
-            if (playbackInfo.callLogId != -1L) {
+            if (playbackInfo.callLogIdString.isNotEmpty()) {
                 AudioPlayerBar(
                     playbackInfo = playbackInfo,
                     onPlayPause = {
                         if (playbackInfo.isPlaying) viewModel.pauseRecording()
-                        else viewModel.playRecording(recordings.find { it.id == playbackInfo.callLogId }!!)
+                        else {
+                            val recording = recordings.find { it.id == playbackInfo.callLogIdString }
+                            if (recording != null) viewModel.playRecording(recording)
+                        }
                     },
                     onClose = { viewModel.stopPlayback() }
                 )
@@ -89,7 +93,7 @@ fun RecordingsListScreen(
                     items(recordings) { recording ->
                         RecordingItemCard(
                             recording = recording,
-                            isPlaying = playbackInfo.callLogId == recording.id && playbackInfo.isPlaying,
+                            isPlaying = playbackInfo.callLogIdString == recording.id && playbackInfo.isPlaying,
                             onPlay = { viewModel.playRecording(recording) }
                         )
                     }
@@ -162,21 +166,20 @@ fun RecordingItemCard(
             Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                val fileName = recording.recordingFilePath.substringAfterLast("/")
                 Text(
-                    text = if (recording.contactName != null) "Recording: ${recording.contactName}" else fileName,
+                    text = if (recording.contactName != null) "Recording: ${recording.contactName}" else "Recording: ${recording.callerNumber}",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${recording.date} • ${DurationUtils.formatDuration(recording.durationSeconds)}",
+                    text = "${recording.createdAt} • ${DurationUtils.formatDuration(recording.durationSeconds)}",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                RecordingCategoryBadge(recording.category ?: "unclassified")
+                RecordingCategoryBadge(recording.callCategory)
             }
 
             IconButton(onClick = onPlay) {
@@ -192,9 +195,9 @@ fun RecordingItemCard(
 
 @Composable
 fun RecordingCategoryBadge(category: String) {
-    val color = when (category.lowercase()) {
-        "client" -> Color(0xFF2E7D32)
-        "team_member" -> Color(0xFF1976D2)
+    val color = when (category.uppercase()) {
+        "CLIENT" -> Color(0xFF2E7D32)
+        "TEAM_MEMBER" -> Color(0xFF1976D2)
         else -> Color(0xFF757575)
     }
 
@@ -203,7 +206,7 @@ fun RecordingCategoryBadge(category: String) {
         shape = RoundedCornerShape(4.dp)
     ) {
         Text(
-            text = category.replaceFirstChar { it.uppercase() },
+            text = category.lowercase().replaceFirstChar { it.uppercase() },
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             fontSize = 10.sp,
             color = color,

@@ -1,11 +1,6 @@
 package com.mistavinya.smac.data.dao
 
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.OnConflictStrategy
-import androidx.room.Query
-import androidx.room.Update
+import androidx.room.*
 import com.mistavinya.smac.data.entity.CallLogEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -20,51 +15,65 @@ interface CallLogDao {
     @Delete
     suspend fun delete(callLog: CallLogEntity)
 
+    @Query("SELECT * FROM call_logs ORDER BY created_at DESC")
+    fun getAllCallLogs(): Flow<List<CallLogEntity>>
+
     @Query("SELECT * FROM call_logs WHERE id = :id")
-    suspend fun getById(id: Long): CallLogEntity?
+    suspend fun getById(id: String): CallLogEntity?
 
-    @Query("SELECT * FROM call_logs ORDER BY createdAt DESC")
-    fun getAll(): Flow<List<CallLogEntity>>
+    @Query("SELECT * FROM call_logs WHERE call_direction = :direction ORDER BY created_at DESC")
+    fun getByDirection(direction: String): Flow<List<CallLogEntity>>
 
-    @Query("SELECT * FROM call_logs WHERE category = :category ORDER BY createdAt DESC")
+    @Query("SELECT * FROM call_logs WHERE call_category = :category ORDER BY created_at DESC")
     fun getByCategory(category: String): Flow<List<CallLogEntity>>
 
-    @Query("SELECT * FROM call_logs WHERE contactName LIKE '%' || :query || '%' OR phoneNumber LIKE '%' || :query || '%' OR companyName LIKE '%' || :query || '%'")
-    fun searchByNameOrNumber(query: String): Flow<List<CallLogEntity>>
+    @Query("SELECT * FROM call_logs WHERE is_synced = 0 ORDER BY created_at ASC")
+    suspend fun getUnsynced(): List<CallLogEntity>
 
-    @Query("DELETE FROM call_logs WHERE id = :id")
-    suspend fun deleteById(id: Long)
+    @Query("UPDATE call_logs SET call_category = :category, is_form_required = :formRequired, has_recording = :hasRecording, updated_at = :updatedAt WHERE id = :id")
+    suspend fun updateCategory(id: String, category: String, formRequired: Boolean, hasRecording: Boolean, updatedAt: Long = System.currentTimeMillis())
 
-    @Query("SELECT * FROM call_logs WHERE date = :date ORDER BY time DESC")
-    fun getCallsByDate(date: String): Flow<List<CallLogEntity>>
+    @Query("UPDATE call_logs SET is_form_submitted = 1, updated_at = :updatedAt WHERE id = :id")
+    suspend fun markFormSubmitted(id: String, updatedAt: Long = System.currentTimeMillis())
 
-    @Query("SELECT * FROM call_logs ORDER BY createdAt DESC LIMIT :limit")
-    fun getRecentCalls(limit: Int): Flow<List<CallLogEntity>>
+    @Query("UPDATE call_logs SET is_synced = 1, updated_at = :updatedAt WHERE id = :id")
+    suspend fun markSynced(id: String, updatedAt: Long = System.currentTimeMillis())
 
-    @Query("SELECT * FROM call_logs WHERE phoneNumber = :phoneNumber AND category = 'client' ORDER BY createdAt DESC LIMIT 1")
-    suspend fun getLastClientCallByNumber(phoneNumber: String): CallLogEntity?
+    @Query("SELECT * FROM call_logs WHERE contact_name LIKE '%' || :query || '%' OR caller_number LIKE '%' || :query || '%' OR callee_number LIKE '%' || :query || '%' ORDER BY created_at DESC")
+    fun search(query: String): Flow<List<CallLogEntity>>
 
-    @Query("SELECT * FROM call_logs WHERE storageStatus = 'saved' ORDER BY createdAt DESC")
-    fun getAllSavedRecordings(): Flow<List<CallLogEntity>>
+    // Convenience for stats
+    @Query("SELECT COUNT(*) FROM call_logs WHERE DATE(created_at/1000, 'unixepoch', 'localtime') = :date")
+    fun getTodayCallCount(date: String): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM call_logs WHERE date = :todayDate")
-    fun getTodayCallCount(todayDate: String): Flow<Int>
-
-    @Query("SELECT COUNT(*) FROM call_logs WHERE recordingFilePath != ''")
+    @Query("SELECT COUNT(*) FROM call_logs WHERE has_recording = 1")
     fun getTotalRecordingsCount(): Flow<Int>
 
-    @Query("UPDATE call_logs SET category = :category WHERE id = :id")
-    suspend fun updateCategory(id: Long, category: String)
+    @Query("SELECT * FROM call_logs WHERE has_recording = 1 ORDER BY created_at DESC")
+    fun getAllSavedRecordings(): Flow<List<CallLogEntity>>
 
-    @Query("SELECT * FROM call_logs WHERE callType = :type ORDER BY createdAt DESC")
-    fun getByCallType(type: String): Flow<List<CallLogEntity>>
+    @Query("SELECT * FROM call_logs ORDER BY created_at DESC LIMIT :limit")
+    fun getRecentCalls(limit: Int): Flow<List<CallLogEntity>>
 
-    @Query("UPDATE call_logs SET recordingFilePath = :path WHERE id = :id")
-    suspend fun updateFilePath(id: Long, path: String)
+    @Query("SELECT COUNT(*) FROM call_logs WHERE created_at >= :since")
+    fun getCallCountSince(since: Long): Flow<Int>
 
-    @Query("UPDATE call_logs SET companyName = :companyName, contactPersonName = :contactPersonName, callPurpose = :callPurpose, notes = :notes WHERE id = :id")
-    suspend fun updateClientDetails(id: Long, companyName: String, contactPersonName: String, callPurpose: String, notes: String)
+    @Query("SELECT COUNT(*) FROM call_logs")
+    fun getTotalCallCount(): Flow<Int>
 
-    @Query("UPDATE call_logs SET companyName = :company, contactPersonName = :name, contactDesignation = :designation WHERE id = :id")
-    suspend fun updateClientInfo(id: Long, company: String?, name: String?, designation: String?)
+    @Query("""
+        UPDATE call_logs SET 
+            has_recording = :hasRecording, 
+            local_recording_path = :localRecordingPath,
+            recording_file_name = :recordingFileName,
+            recording_file_size_bytes = :recordingFileSizeBytes 
+        WHERE id = :callId
+    """)
+    suspend fun updateRecording(
+        callId: String,
+        hasRecording: Boolean,
+        localRecordingPath: String?,
+        recordingFileName: String?,
+        recordingFileSizeBytes: Long
+    )
 }

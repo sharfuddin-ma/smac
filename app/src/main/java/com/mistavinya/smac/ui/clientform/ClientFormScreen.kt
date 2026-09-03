@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.mistavinya.smac.data.CallSyncDatabase
 import com.mistavinya.smac.data.entity.CallLogEntity
+import com.mistavinya.smac.data.entity.CallFormDataEntity
+import com.mistavinya.smac.data.entity.UploadQueueEntity
 import com.mistavinya.smac.storage.LocalStorageManager
 import com.mistavinya.smac.ui.navigation.Screen
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +33,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClientFormScreen(callLogId: Long, navController: NavController) {
+fun ClientFormScreen(callLogId: String, navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
@@ -46,8 +48,7 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
         val db = CallSyncDatabase.getInstance(context)
         callLog = db.callLogDao().getById(callLogId)
         callLog?.let {
-            companyName = it.companyName ?: ""
-            customerName = it.contactPersonName ?: it.contactName ?: ""
+            customerName = it.contactName ?: ""
         }
     }
     
@@ -77,7 +78,6 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
         ) {
             Spacer(Modifier.height(8.dp))
             
-            // Call summary
             callLog?.let { log ->
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -89,9 +89,9 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = when (log.callType) {
-                                "outgoing" -> Icons.AutoMirrored.Filled.CallMade
-                                "incoming" -> Icons.AutoMirrored.Filled.CallReceived
+                            imageVector = when (log.callDirection) {
+                                "OUTGOING" -> Icons.AutoMirrored.Filled.CallMade
+                                "INCOMING" -> Icons.AutoMirrored.Filled.CallReceived
                                 else -> Icons.AutoMirrored.Filled.PhoneMissed
                             },
                             contentDescription = null,
@@ -100,7 +100,7 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            "${log.contactName ?: log.phoneNumber} · ${log.callType.replaceFirstChar { it.uppercase() }} · ${formatDuration(log.durationSeconds)}",
+                            "${log.contactName ?: log.callerNumber} · ${log.callDirection.lowercase().replaceFirstChar { it.uppercase() }} · ${formatDuration(log.durationSeconds)}",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -110,7 +110,6 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
             
             Spacer(Modifier.height(28.dp))
             
-            // Form fields
             Text(
                 "CLIENT INFORMATION",
                 fontSize = 11.sp,
@@ -180,30 +179,25 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
             
             Spacer(Modifier.height(32.dp))
             
-            // Save button
             Button(
                 onClick = {
                     if (isFormValid && !isSaving) {
                         isSaving = true
                         scope.launch(Dispatchers.IO) {
                             val db = CallSyncDatabase.getInstance(context)
-                            db.callLogDao().updateClientDetails(
-                                id = callLogId,
+                            db.callFormDataDao().insert(CallFormDataEntity(
+                                callLogId = callLogId,
                                 companyName = companyName.trim(),
-                                contactPersonName = customerName.trim(),
-                                callPurpose = reasonForCall.trim(),
+                                customerName = customerName.trim(),
+                                reasonForCall = reasonForCall.trim(),
                                 notes = description.trim()
-                            )
-                            val storageManager = LocalStorageManager(context)
-                            val log = db.callLogDao().getById(callLogId)
-                            log?.let {
-                                if (it.recordingFilePath.isNotEmpty() && File(it.recordingFilePath).exists()) {
-                                    val newFile = storageManager.moveRecordingToCategory(
-                                        File(it.recordingFilePath), "client", it.phoneNumber
-                                    )
-                                    db.callLogDao().updateFilePath(callLogId, newFile.absolutePath)
-                                }
-                            }
+                            ))
+                            db.callLogDao().markFormSubmitted(callLogId)
+                            db.uploadQueueDao().insert(UploadQueueEntity(
+                                callLogLocalId = callLogId,
+                                uploadType = "FORM_DATA",
+                                payload = "{}"
+                            ))
                             withContext(Dispatchers.Main) {
                                 isSaving = false
                                 navController.navigate(Screen.Home.route) {
@@ -230,21 +224,10 @@ fun ClientFormScreen(callLogId: Long, navController: NavController) {
             
             Spacer(Modifier.height(12.dp))
             
-            // Skip option
             TextButton(
                 onClick = {
                     scope.launch(Dispatchers.IO) {
                         val db = CallSyncDatabase.getInstance(context)
-                        val storageManager = LocalStorageManager(context)
-                        val log = db.callLogDao().getById(callLogId)
-                        log?.let {
-                            if (it.recordingFilePath.isNotEmpty() && File(it.recordingFilePath).exists()) {
-                                val newFile = storageManager.moveRecordingToCategory(
-                                    File(it.recordingFilePath), "client", it.phoneNumber
-                                )
-                                db.callLogDao().updateFilePath(callLogId, newFile.absolutePath)
-                            }
-                        }
                         withContext(Dispatchers.Main) {
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(Screen.Home.route) { inclusive = true }

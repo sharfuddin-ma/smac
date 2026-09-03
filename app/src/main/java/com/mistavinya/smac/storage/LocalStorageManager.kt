@@ -28,6 +28,8 @@ class LocalStorageManager(private val context: Context) {
         categoryDirs.values.forEach { if (!it.exists()) it.mkdir() }
     }
 
+    fun getContext(): Context = context
+
     fun createRecordingFile(phoneNumber: String): File {
         val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.getDefault()).format(java.util.Date())
         val sanitizedNumber = phoneNumber.replace(Regex("[^0-9+]"), "")
@@ -48,7 +50,7 @@ class LocalStorageManager(private val context: Context) {
 
     fun saveMetadataJson(callLogEntity: CallLogEntity, category: String): File {
         val targetDir = categoryDirs[category] ?: categoryDirs["unclassified"]!!
-        val jsonFile = File(targetDir, "METADATA_${callLogEntity.phoneNumber}_${callLogEntity.id}.json")
+        val jsonFile = File(targetDir, "METADATA_${callLogEntity.callerNumber}_${callLogEntity.id}.json")
         val jsonString = gson.toJson(callLogEntity)
         
         FileOutputStream(jsonFile).use { fos ->

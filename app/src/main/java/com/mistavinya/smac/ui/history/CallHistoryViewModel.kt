@@ -1,6 +1,7 @@
 package com.mistavinya.smac.ui.history
 
 import android.content.Context
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,6 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mistavinya.smac.data.CallSyncDatabase
+import com.mistavinya.smac.data.dao.CallFormDataDao
+import com.mistavinya.smac.data.dao.CallRecordingDao
 import com.mistavinya.smac.data.entity.CallLogEntity
 import com.mistavinya.smac.data.repository.CallLogRepository
 import com.mistavinya.smac.storage.LocalStorageManager
@@ -18,15 +21,25 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.*
 
 enum class HistoryFilter {
-    ALL, CLIENT, TEAM, PERSONAL, MISSED, SAVED
+    ALL,
+    INCOMING,
+    OUTGOING,
+    MISSED,
+    CLIENT,
+    TEAM_MEMBER,
+    PERSONAL,
+    PENDING
 }
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class CallHistoryViewModel(
     private val repository: CallLogRepository,
+    private val callFormDataDao: CallFormDataDao,
+    private val callRecordingDao: CallRecordingDao,
     private val storageManager: LocalStorageManager,
     private val audioPlayer: AudioPlayer
 ) : ViewModel() {
@@ -44,15 +57,17 @@ class CallHistoryViewModel(
         filter to query
     }.flatMapLatest { (filter, query) ->
         if (query.isNotEmpty()) {
-            repository.searchByNameOrNumber(query)
+            repository.search(query)
         } else {
             when (filter) {
                 HistoryFilter.ALL -> repository.getAll()
-                HistoryFilter.CLIENT -> repository.getByCategory("client")
-                HistoryFilter.TEAM -> repository.getByCategory("team_member")
-                HistoryFilter.PERSONAL -> repository.getByCategory("personal")
-                HistoryFilter.MISSED -> repository.getByCallType("missed")
-                HistoryFilter.SAVED -> repository.getAllSavedRecordings()
+                HistoryFilter.INCOMING, 
+                HistoryFilter.OUTGOING, 
+                HistoryFilter.MISSED -> repository.getByDirection(filter.name)
+                HistoryFilter.CLIENT,
+                HistoryFilter.TEAM_MEMBER,
+                HistoryFilter.PERSONAL,
+                HistoryFilter.PENDING -> repository.getByCategory(filter.name)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -84,19 +99,28 @@ class CallHistoryViewModel(
     }
 
     fun playRecording(call: CallLogEntity) {
-        if (playbackInfo.callLogId == call.id && !playbackInfo.isPlaying) {
-            audioPlayer.resume()
-            playbackInfo = playbackInfo.copy(isPlaying = true)
-        } else {
-            audioPlayer.play(call.recordingFilePath) {
-                playbackInfo = playbackInfo.copy(isPlaying = false, progress = 0f)
+        viewModelScope.launch {
+            val recording = callRecordingDao.getByCallLogId(call.id)
+            val filePath = recording?.localFilePath
+            
+            if (filePath != null && File(filePath).exists()) {
+                if (playbackInfo.callLogIdString == call.id && !playbackInfo.isPlaying) {
+                    audioPlayer.resume()
+                    playbackInfo = playbackInfo.copy(isPlaying = true)
+                } else {
+                    audioPlayer.play(filePath) {
+                        playbackInfo = playbackInfo.copy(isPlaying = false, progress = 0f)
+                    }
+                    playbackInfo = PlaybackInfo(
+                        callLogIdString = call.id,
+                        filePath = filePath,
+                        isPlaying = true,
+                        duration = formatMs(audioPlayer.getDuration())
+                    )
+                }
+            } else {
+                Log.w("CallHistoryVM", "No recording file found for call ${call.id}")
             }
-            playbackInfo = PlaybackInfo(
-                callLogId = call.id,
-                filePath = call.recordingFilePath,
-                isPlaying = true,
-                duration = formatMs(audioPlayer.getDuration())
-            )
         }
     }
 
@@ -124,17 +148,25 @@ class CallHistoryViewModel(
     fun updateFilter(filter: HistoryFilter) {
         _selectedFilter.value = filter
         if (filter != HistoryFilter.ALL) {
-            _searchQuery.value = "" // Clear search when specific filter applied
+            _searchQuery.value = ""
         }
     }
 
     fun deleteCall(call: CallLogEntity) {
         viewModelScope.launch {
-            if (playbackInfo.callLogId == call.id) stopPlayback()
-            storageManager.deleteRecording(call.recordingFilePath)
-            repository.delete(call)
+            if (playbackInfo.callLogIdString == call.id) stopPlayback()
+            
+            // Delete recording file from storage if exists
+            val recording = callRecordingDao.getByCallLogId(call.id)
+            recording?.localFilePath?.let { path ->
+                try { File(path).delete() } catch (e: Exception) { /* ignore */ }
+            }
+            
+            repository.delete(call) // CASCADE deletes form + recording entities
         }
     }
+
+    suspend fun getFormData(callLogId: String) = callFormDataDao.getByCallLogId(callLogId)
 
     override fun onCleared() {
         audioPlayer.stop()
@@ -150,7 +182,13 @@ class CallHistoryViewModelFactory(private val context: Context) : ViewModelProvi
             val storage = LocalStorageManager(context)
             val player = AudioPlayer(context)
             @Suppress("UNCHECKED_CAST")
-            return CallHistoryViewModel(repo, storage, player) as T
+            return CallHistoryViewModel(
+                repo, 
+                db.callFormDataDao(), 
+                db.callRecordingDao(), 
+                storage, 
+                player
+            ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

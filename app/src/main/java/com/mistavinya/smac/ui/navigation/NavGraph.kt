@@ -9,6 +9,6 @@ sealed class Screen(val route: String) {
     object Profile : Screen("profile")
     object RecordingsList : Screen("recordings_list")
     object ClientForm : Screen("client_form/{callLogId}") {
-        fun createRoute(callLogId: Long) = "client_form/$callLogId"
+        fun createRoute(callLogId: String) = "client_form/$callLogId"
     }
 }

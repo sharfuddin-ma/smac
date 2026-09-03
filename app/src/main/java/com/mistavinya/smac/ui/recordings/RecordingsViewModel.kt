@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 data class PlaybackInfo(
-    val callLogId: Long = -1,
+    val callLogIdString: String = "",
     val filePath: String = "",
     val isPlaying: Boolean = false,
     val progress: Float = 0f,
@@ -41,8 +41,8 @@ class RecordingsViewModel(
     val recordings: StateFlow<List<CallLogEntity>> = _selectedFilter.flatMapLatest { filter ->
         repository.getAllSavedRecordings().map { list ->
             when (filter) {
-                "Client" -> list.filter { it.category == "client" }
-                "Team" -> list.filter { it.category == "team_member" }
+                "Client" -> list.filter { it.callCategory == "CLIENT" }
+                "Team" -> list.filter { it.callCategory == "TEAM_MEMBER" }
                 else -> list
             }
         }
@@ -79,19 +79,26 @@ class RecordingsViewModel(
     }
 
     fun playRecording(call: CallLogEntity) {
-        if (playbackInfo.callLogId == call.id && !playbackInfo.isPlaying) {
-            audioPlayer.resume()
-            playbackInfo = playbackInfo.copy(isPlaying = true)
-        } else {
-            audioPlayer.play(call.recordingFilePath) {
-                playbackInfo = playbackInfo.copy(isPlaying = false, progress = 0f)
+        viewModelScope.launch {
+            val db = CallSyncDatabase.getInstance(storageManager.getContext())
+            val recording = db.callRecordingDao().getByCallLogId(call.id)
+            
+            if (recording != null && recording.localFilePath != null) {
+                if (playbackInfo.callLogIdString == call.id && !playbackInfo.isPlaying) {
+                    audioPlayer.resume()
+                    playbackInfo = playbackInfo.copy(isPlaying = true)
+                } else {
+                    audioPlayer.play(recording.localFilePath) {
+                        playbackInfo = playbackInfo.copy(isPlaying = false, progress = 0f)
+                    }
+                    playbackInfo = PlaybackInfo(
+                        callLogIdString = call.id,
+                        filePath = recording.localFilePath,
+                        isPlaying = true,
+                        duration = formatMs(audioPlayer.getDuration())
+                    )
+                }
             }
-            playbackInfo = PlaybackInfo(
-                callLogId = call.id,
-                filePath = call.recordingFilePath,
-                isPlaying = true,
-                duration = formatMs(audioPlayer.getDuration())
-            )
         }
     }
 
@@ -107,8 +114,12 @@ class RecordingsViewModel(
 
     fun deleteRecording(call: CallLogEntity) {
         viewModelScope.launch {
-            if (playbackInfo.callLogId == call.id) stopPlayback()
-            storageManager.deleteRecording(call.recordingFilePath)
+            if (playbackInfo.callLogIdString == call.id) stopPlayback()
+            val db = CallSyncDatabase.getInstance(storageManager.getContext())
+            val recording = db.callRecordingDao().getByCallLogId(call.id)
+            if (recording != null && recording.localFilePath != null) {
+                storageManager.deleteRecording(recording.localFilePath)
+            }
             repository.delete(call)
         }
     }

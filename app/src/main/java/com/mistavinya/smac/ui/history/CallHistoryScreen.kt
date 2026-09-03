@@ -1,5 +1,8 @@
 package com.mistavinya.smac.ui.history
 
+import android.content.Context
+import android.media.MediaPlayer
+import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -16,12 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.automirrored.filled.PhoneMissed
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,14 +29,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.mistavinya.smac.data.entity.CallLogEntity
+import com.mistavinya.smac.data.entity.CallFormDataEntity
 import com.mistavinya.smac.ui.components.AudioPlayerBar
+import com.mistavinya.smac.ui.recordings.PlaybackInfo
 import com.mistavinya.smac.util.DateUtils
 import com.mistavinya.smac.util.DurationUtils
+import com.mistavinya.smac.util.SettingsDataStore
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,19 +49,74 @@ fun CallHistoryScreen(
     navController: NavController,
     viewModel: CallHistoryViewModel = viewModel(factory = CallHistoryViewModelFactory(LocalContext.current))
 ) {
+    val context = LocalContext.current
     val calls by viewModel.calls.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val playbackInfo = viewModel.playbackInfo
     
-    var isLoading by remember { mutableStateOf(true) }
+    val settingsDataStore = remember { SettingsDataStore(context) }
+    val devicePhone1 by settingsDataStore.phoneNumber1.collectAsState(initial = "")
+    val devicePhone2 by settingsDataStore.phoneNumber2.collectAsState(initial = "")
     
+    var isLoading by remember { mutableStateOf(true) }
+    var currentlyPlayingId by remember { mutableStateOf<String?>(null) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var isSearchActive by remember { mutableStateOf(false) }
+
     LaunchedEffect(calls) {
         delay(300)
         isLoading = false
     }
 
-    var isSearchActive by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
+
+    fun playRecording(uriString: String, callId: String) {
+        try {
+            if (currentlyPlayingId == callId && mediaPlayer != null) {
+                if (mediaPlayer!!.isPlaying) {
+                    mediaPlayer!!.pause()
+                    isPlaying = false
+                } else {
+                    mediaPlayer!!.start()
+                    isPlaying = true
+                }
+                return
+            }
+
+            mediaPlayer?.release()
+            val uri = Uri.parse(uriString)
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(context, uri)
+                prepare()
+                start()
+                setOnCompletionListener {
+                    currentlyPlayingId = null
+                    isPlaying = false
+                }
+            }
+            currentlyPlayingId = callId
+            isPlaying = true
+        } catch (e: Exception) {
+            currentlyPlayingId = null
+            isPlaying = false
+        }
+    }
+
+    fun stopPlayback() {
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+        currentlyPlayingId = null
+        isPlaying = false
+    }
+
     var selectedCallForDetails by remember { mutableStateOf<CallLogEntity?>(null) }
     var showDeleteConfirmation by remember { mutableStateOf<CallLogEntity?>(null) }
     val sheetState = rememberModalBottomSheetState()
@@ -99,12 +156,15 @@ fun CallHistoryScreen(
             }
         },
         bottomBar = {
-            if (playbackInfo.callLogId != -1L) {
+            if (playbackInfo.callLogIdString.isNotEmpty()) {
                 AudioPlayerBar(
                     playbackInfo = playbackInfo,
                     onPlayPause = {
                         if (playbackInfo.isPlaying) viewModel.pauseRecording()
-                        else viewModel.playRecording(calls.find { it.id == playbackInfo.callLogId }!!)
+                        else {
+                            val call = calls.find { it.id == playbackInfo.callLogIdString }
+                            if (call != null) viewModel.playRecording(call)
+                        }
                     },
                     onClose = { viewModel.stopPlayback() }
                 )
@@ -123,26 +183,23 @@ fun CallHistoryScreen(
                 }
             } else if (calls.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Assignment, 
-                            null, 
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text("No call history available.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
-                    }
+                    Text("No call history available.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(calls) { call ->
                         CallHistoryItemCard(
                             call = call,
+                            devicePhone1 = devicePhone1,
+                            devicePhone2 = devicePhone2,
+                            currentlyPlayingId = currentlyPlayingId,
+                            isPlaying = isPlaying,
+                            onPlayPause = { playRecording(call.localRecordingPath!!, call.id) },
+                            onStop = { stopPlayback() },
                             onClick = { selectedCallForDetails = call }
                         )
                     }
@@ -157,8 +214,11 @@ fun CallHistoryScreen(
             ) {
                 CallDetailsContent(
                     call = selectedCallForDetails!!,
+                    getFormData = viewModel::getFormData,
                     onPlay = { 
-                        viewModel.playRecording(selectedCallForDetails!!)
+                        if (!selectedCallForDetails!!.localRecordingPath.isNullOrBlank()) {
+                            playRecording(selectedCallForDetails!!.localRecordingPath!!, selectedCallForDetails!!.id)
+                        }
                         selectedCallForDetails = null 
                     },
                     onDelete = {
@@ -207,7 +267,7 @@ fun FilterChipsSection(
                 onClick = { onFilterSelected(filter) },
                 label = { 
                     Text(
-                        filter.name.lowercase().replaceFirstChar { it.uppercase() },
+                        filter.name.lowercase().replace("_", " ").replaceFirstChar { it.uppercase() },
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     ) 
@@ -222,87 +282,156 @@ fun FilterChipsSection(
 }
 
 @Composable
-fun CallHistoryItemCard(call: CallLogEntity, onClick: () -> Unit) {
+fun CallHistoryItemCard(
+    call: CallLogEntity,
+    devicePhone1: String,
+    devicePhone2: String,
+    currentlyPlayingId: String?,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onStop: () -> Unit,
+    onClick: () -> Unit
+) {
+    val displayNumber = getDisplayNumber(call, devicePhone1, devicePhone2)
+
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val initials = call.contactName?.split(" ")
-                ?.filter { it.isNotEmpty() }
-                ?.take(2)
-                ?.map { it[0] }
-                ?.joinToString("") ?: "?"
-
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = initials.uppercase(),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
+                val initials = call.contactName?.split(" ")
+                    ?.filter { it.isNotEmpty() }
+                    ?.take(2)
+                    ?.map { it[0] }
+                    ?.joinToString("") ?: "?"
 
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = call.contactName ?: call.phoneNumber,
+                        text = initials.uppercase(),
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = call.contactName ?: displayNumber,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    if (call.storageStatus == "saved") {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    
+                    Text(
+                        text = "$displayNumber • ${DurationUtils.formatDuration(call.durationSeconds)}",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Text(
+                        text = when (call.callDirection) {
+                            "OUTGOING" -> "↗ Outgoing"
+                            "INCOMING" -> "↙ Incoming"
+                            "MISSED"   -> "✕ Missed"
+                            else -> call.callDirection.lowercase().replaceFirstChar { it.uppercase() }
+                        },
+                        fontSize = 11.sp,
+                        color = when (call.callDirection) {
+                            "OUTGOING" -> MaterialTheme.colorScheme.primary
+                            "INCOMING" -> Color(0xFF4CAF50)
+                            "MISSED"   -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = DateUtils.formatRelativeTime(call.createdAt),
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    HistoryCategoryBadge(call.callCategory)
+                }
+            }
+
+            if (call.hasRecording && !call.localRecordingPath.isNullOrBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    IconButton(
+                        onClick = onPlayPause,
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.Save,
-                            contentDescription = "Saved",
-                            modifier = Modifier.size(14.dp),
+                            imageVector = if (currentlyPlayingId == call.id && isPlaying)
+                                Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (currentlyPlayingId == call.id && isPlaying) "Pause" else "Play",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "${call.phoneNumber} • ${DurationUtils.formatDuration(call.durationSeconds)}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = DateUtils.formatRelativeTime(call.createdAt),
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val (icon, color) = when (call.callType) {
-                        "outgoing" -> Icons.AutoMirrored.Filled.CallMade to Color(0xFF1976D2)
-                        "incoming" -> Icons.AutoMirrored.Filled.CallReceived to Color(0xFF4CAF50)
-                        "missed" -> Icons.AutoMirrored.Filled.PhoneMissed to Color(0xFFEF5350)
-                        else -> Icons.Default.Phone to Color.Gray
+                    if (currentlyPlayingId == call.id) {
+                        IconButton(
+                            onClick = onStop,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Stop,
+                                contentDescription = "Stop",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = call.recordingFileName ?: "Recording",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (call.recordingFileSizeBytes > 0L) {
+                            Text(
+                                text = formatFileSize(call.recordingFileSizeBytes),
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     Icon(
-                        imageVector = icon,
+                        Icons.Default.MusicNote,
                         contentDescription = null,
-                        modifier = Modifier.size(12.dp),
-                        tint = color
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    HistoryCategoryBadge(call.category ?: "unclassified")
                 }
             }
         }
@@ -312,21 +441,31 @@ fun CallHistoryItemCard(call: CallLogEntity, onClick: () -> Unit) {
 @Composable
 fun HistoryCategoryBadge(category: String) {
     val isDark = isSystemInDarkTheme()
-    val (bgColor, textColor, text) = when (category.lowercase()) {
-        "client" -> Triple(
+    val (bgColor, textColor, text) = when (category.uppercase()) {
+        "CLIENT" -> Triple(
             if (isDark) Color(0xFF1B5E20).copy(alpha = 0.2f) else Color(0xFFE8F5E9),
             if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32),
             "Client"
         )
-        "team_member" -> Triple(
+        "TEAM_MEMBER" -> Triple(
             if (isDark) Color(0xFF0D47A1).copy(alpha = 0.2f) else Color(0xFFE3F2FD),
             if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2),
             "Team"
         )
-        else -> Triple(
+        "PERSONAL" -> Triple(
             if (isDark) Color(0xFF2C2C2C) else Color(0xFFF5F5F5),
             if (isDark) Color(0xFFB0B0B0) else Color(0xFF757575),
             "Personal"
+        )
+        "MISSED" -> Triple(
+            if (isDark) Color(0xFFB71C1C).copy(alpha = 0.2f) else Color(0xFFFFEBEE),
+            if (isDark) Color(0xFFEF9A9A) else Color(0xFFD32F2F),
+            "Missed"
+        )
+        else -> Triple(
+            if (isDark) Color(0xFFE65100).copy(alpha = 0.2f) else Color(0xFFFFF3E0),
+            if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100),
+            "Pending"
         )
     }
 
@@ -347,9 +486,26 @@ fun HistoryCategoryBadge(category: String) {
 @Composable
 fun CallDetailsContent(
     call: CallLogEntity,
+    getFormData: suspend (String) -> CallFormDataEntity?,
     onPlay: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = LocalContext.current
+    var formData by remember { mutableStateOf<CallFormDataEntity?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    
+    LaunchedEffect(call.id) {
+        formData = getFormData(call.id)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -359,39 +515,103 @@ fun CallDetailsContent(
         Text(text = "Call Details", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
         Spacer(modifier = Modifier.height(24.dp))
 
-        DetailRow("NAME", call.contactName ?: call.phoneNumber)
-        DetailRow("NUMBER", call.phoneNumber)
-        DetailRow("TYPE", call.callType.replaceFirstChar { it.uppercase() })
-        DetailRow("DATE", call.date)
-        DetailRow("TIME", call.time)
+        DetailRow("NAME", call.contactName ?: "Unknown")
+        DetailRow("CALLER", call.callerNumber)
+        DetailRow("CALLEE", call.calleeNumber)
+        DetailRow("TYPE", call.callDirection.replaceFirstChar { it.uppercase() })
         DetailRow("DURATION", DurationUtils.formatDuration(call.durationSeconds))
-        DetailRow("CATEGORY", (call.category ?: "Unclassified").uppercase())
-        if (call.notes != null) DetailRow("NOTES", call.notes)
+        DetailRow("CATEGORY", call.callCategory.uppercase())
+
+        formData?.let { form ->
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("FORM DATA", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 0.5.sp)
+            Spacer(modifier = Modifier.height(12.dp))
+            DetailRow("COMPANY", form.companyName)
+            DetailRow("CUSTOMER", form.customerName)
+            form.reasonForCall?.let { if (it.isNotBlank()) DetailRow("REASON", it) }
+            form.notes?.let { if (it.isNotBlank()) DetailRow("NOTES", it) }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (call.recordingFilePath.isNotEmpty()) {
+        // Bottom action buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Play Recording Button
+            if (call.hasRecording && !call.localRecordingPath.isNullOrBlank()) {
                 Button(
-                    onClick = onPlay,
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    shape = RoundedCornerShape(10.dp)
+                    onClick = {
+                        if (isPlaying) {
+                            mediaPlayer?.pause()
+                            isPlaying = false
+                        } else {
+                            try {
+                                if (mediaPlayer == null) {
+                                    mediaPlayer = MediaPlayer().apply {
+                                        setDataSource(context, Uri.parse(call.localRecordingPath!!))
+                                        prepare()
+                                    }
+                                }
+                                mediaPlayer?.start()
+                                isPlaying = true
+                                mediaPlayer?.setOnCompletionListener {
+                                    isPlaying = false
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("CallDetails", "Playback error: ${e.message}")
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    )
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Play Recording", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (isPlaying) "Pause" else "Play Recording",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
+
+            // Delete Button
             OutlinedButton(
                 onClick = onDelete,
-                modifier = Modifier.weight(1f).height(48.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp),
                 shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.error),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error
+                )
             ) {
-                Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Delete", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Delete",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }
@@ -414,5 +634,27 @@ fun DetailRow(label: String, value: String) {
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurface
         )
+    }
+}
+
+fun getDisplayNumber(callLog: CallLogEntity, devicePhone1: String, devicePhone2: String): String {
+    return when (callLog.callDirection) {
+        "OUTGOING" -> callLog.calleeNumber
+        "INCOMING", "MISSED" -> callLog.callerNumber
+        else -> {
+            when {
+                callLog.callerNumber == devicePhone1 || callLog.callerNumber == devicePhone2 -> callLog.calleeNumber
+                callLog.calleeNumber == devicePhone1 || callLog.calleeNumber == devicePhone2 -> callLog.callerNumber
+                else -> callLog.callerNumber
+            }
+        }
+    }
+}
+
+fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
     }
 }

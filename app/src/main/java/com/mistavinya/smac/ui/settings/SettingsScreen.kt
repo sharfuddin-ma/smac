@@ -1,5 +1,10 @@
 package com.mistavinya.smac.ui.settings
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -38,12 +44,27 @@ fun SettingsScreen(navController: NavController) {
     
     val isDarkMode by themePreferences.isDarkMode.collectAsState(initial = false)
     val classificationTimeout by settingsDataStore.classificationTimeout.collectAsState(initial = 60)
+    val recordingFolderUri by settingsDataStore.recordingFolderUri.collectAsState(initial = "")
     
     var showTimeoutDialog by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var storageUsed by remember { mutableStateOf("Calculating...") }
     
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let { folderUri ->
+            context.contentResolver.takePersistableUriPermission(
+                folderUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            scope.launch {
+                settingsDataStore.setRecordingFolderUri(folderUri.toString())
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             storageUsed = storageManager.getStorageUsedFormatted()
@@ -80,6 +101,98 @@ fun SettingsScreen(navController: NavController) {
             // RECORDING section
             item {
                 SectionHeader("RECORDING")
+                
+                // RECORDING FOLDER CARD — Professional Design
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Recording Folder",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (recordingFolderUri.isNotBlank()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp),
+                                            tint = Color(0xFF4CAF50)
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            "Folder mapped",
+                                            fontSize = 13.sp,
+                                            color = Color(0xFF4CAF50)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        "Not configured",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+
+                        if (recordingFolderUri.isNotBlank()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = Uri.parse(recordingFolderUri).lastPathSegment ?: recordingFolderUri,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 36.dp)
+                            )
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+
+                        OutlinedButton(
+                            onClick = { folderPickerLauncher.launch(null) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(
+                                if (recordingFolderUri.isBlank()) Icons.Default.FolderOpen else Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (recordingFolderUri.isBlank()) "Set Recording Folder" else "Change Folder",
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
                 SettingsItem(
                     icon = Icons.Default.Timer,
                     title = "Classification timeout",
@@ -99,8 +212,8 @@ fun SettingsScreen(navController: NavController) {
                 )
                 SettingsItem(
                     icon = Icons.Default.FolderOpen,
-                    title = "Recordings",
-                    subtitle = "View and manage saved recordings",
+                    title = "My Recordings",
+                    subtitle = "View and manage recordings list",
                     onClick = { navController.navigate(Screen.RecordingsList.route) }
                 )
                 SettingsItem(
