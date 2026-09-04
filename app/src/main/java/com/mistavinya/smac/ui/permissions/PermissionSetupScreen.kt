@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,88 +33,67 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavController
 import com.mistavinya.smac.ui.navigation.Screen
+import com.mistavinya.smac.util.MdmConfigReader
 import com.mistavinya.smac.util.PermissionGranter
 import com.mistavinya.smac.util.PermissionUtils
+import kotlinx.coroutines.delay
 
 @Composable
 fun PermissionSetupScreen(navController: NavController) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // ═══ DEVICE OWNER BYPASS ═══
-    // If app is Device Owner, permissions are already granted — skip this screen immediately
-    LaunchedEffect(Unit) {
-        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        if (dpm.isDeviceOwnerApp(context.packageName)) {
-            Log.i("PermissionSetup", "Device Owner detected — bypassing permission screen")
-
-            // Force re-grant just in case
-            PermissionGranter.grantAllPermissions(context)
-
-            // Navigate away immediately
-            navController.navigate(Screen.Home.route) {
-                popUpTo(Screen.PermissionSetup.route) { inclusive = true }
-            }
-            return@LaunchedEffect
-        }
-    }
-    // ═══ END BYPASS ═══
-
     // Track current permission state
     var runtimeGranted by remember {
         mutableStateOf(PermissionUtils.areRuntimePermissionsGranted(context))
     }
     var overlayGranted by remember {
-        mutableStateOf(Settings.canDrawOverlays(context))
+        mutableStateOf(PermissionUtils.isOverlayGranted(context))
     }
 
-    // Status text to show user what's needed
-    var statusText by remember { mutableStateOf("Tap below to grant permissions") }
-
-    val requiredPermissions = remember { PermissionUtils.getRequiredRuntimePermissions() }
-
-    // Runtime permission launcher
-    val multiplePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        runtimeGranted = PermissionUtils.areRuntimePermissionsGranted(context)
-
-        if (runtimeGranted) {
-            // Runtime permissions done — now handle overlay
-            PermissionUtils.requestBatteryOptimizationExemption(context)
-
-            if (!Settings.canDrawOverlays(context)) {
-                statusText = "Now grant Overlay permission to show post-call popup"
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:${context.packageName}")
-                )
-                context.startActivity(intent)
-            } else {
-                // Everything granted — navigate
-                overlayGranted = true
-                navController.navigate(Screen.Home.route) {
-                    popUpTo(Screen.PermissionSetup.route) { inclusive = true }
-                }
+    // Path bypass logic
+    LaunchedEffect(Unit) {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val isDeviceOwner = dpm.isDeviceOwnerApp(context.packageName)
+        val hasMdmConfig = MdmConfigReader.hasConfig(context)
+        
+        // If DO or MDM, we can skip the manual setup screen entirely
+        if (isDeviceOwner || hasMdmConfig) {
+            Log.i("PermissionSetup", "Bypassing screen: DO=$isDeviceOwner, MDM=$hasMdmConfig")
+            if (isDeviceOwner) PermissionGranter.grantAllPermissions(context)
+            
+            navController.navigate(Screen.Home.route) {
+                popUpTo(Screen.Splash.route) { inclusive = true }
             }
-        } else {
-            statusText = "Some permissions were denied. Tap to try again or open App Settings."
+            return@LaunchedEffect
+        }
+        
+        // If runtime already granted, we might still need overlay
+        if (runtimeGranted && overlayGranted) {
+            navController.navigate(Screen.Home.route) {
+                popUpTo(Screen.Splash.route) { inclusive = true }
+            }
         }
     }
+
+    var requestCount by remember { mutableIntStateOf(0) }
+    var showOverlayStep by remember { mutableStateOf(false) }
+
+    // Logic to decide if we should show overlay step
+    // Show overlay step if runtime is granted (or we are skipping it) and overlay is missing
+    val currentStepIsOverlay = (runtimeGranted || requestCount > 0) && !overlayGranted && showOverlayStep
 
     // Re-check permissions when user returns from Settings/Overlay screen
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 runtimeGranted = PermissionUtils.areRuntimePermissionsGranted(context)
-                overlayGranted = Settings.canDrawOverlays(context)
+                overlayGranted = PermissionUtils.isOverlayGranted(context)
 
                 if (runtimeGranted && overlayGranted) {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.PermissionSetup.route) { inclusive = true }
+                        popUpTo(Screen.Splash.route) { inclusive = true }
                     }
-                } else if (runtimeGranted && !overlayGranted) {
-                    statusText = "Overlay permission still needed. Tap below to grant."
                 }
             }
         }
@@ -123,18 +101,25 @@ fun PermissionSetupScreen(navController: NavController) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Auto-check on first composition
-    LaunchedEffect(Unit) {
-        if (runtimeGranted && overlayGranted) {
-            navController.navigate(Screen.Home.route) {
-                popUpTo(Screen.PermissionSetup.route) { inclusive = true }
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        requestCount++
+        runtimeGranted = PermissionUtils.areRuntimePermissionsGranted(context)
+        if (runtimeGranted) {
+            if (!overlayGranted) {
+                showOverlayStep = true
+            } else {
+                navController.navigate(Screen.Home.route) {
+                    popUpTo(Screen.Splash.route) { inclusive = true }
+                }
             }
+        } else {
+            // Show skip option even if denied
+            showOverlayStep = true
         }
     }
 
-    // ═══════════════════════════════════════════════════
-    // UI
-    // ═══════════════════════════════════════════════════
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -143,150 +128,184 @@ fun PermissionSetupScreen(navController: NavController) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Default.Security,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
+        if (!currentStepIsOverlay) {
+            // ═══════════════════════════════════════════════════
+            // STEP 1: RUNTIME PERMISSIONS
+            // ═══════════════════════════════════════════════════
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
 
-        Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
-        @Suppress("DEPRECATION")
-        Text(
-            "Permissions Required",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+            Text(
+                "Permissions Required",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
 
-        Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
 
-        Text(
-            "SalesEdgeAI needs the following permissions to manage your business calls. These are mandatory for the app to function.",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            lineHeight = 20.sp
-        )
+            Text(
+                "SalesEdgeAI needs permissions to manage your business calls. This screen is for manual configuration if MDM auto-grant is not available.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
 
-        Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(32.dp))
 
-        val permissionItems = listOf(
-            Icons.Default.Phone to "Phone — Detect incoming & outgoing calls",
-            Icons.Default.Phone to "Phone Numbers — Read SIM phone numbers",
-            Icons.AutoMirrored.Filled.ListAlt to "Call Log — Read call history details",
-            Icons.Default.Person to "Contacts — Identify caller names",
-            Icons.Default.Folder to "Storage — Access call recordings",
-            Icons.Default.Notifications to "Notifications — Show status",
-            Icons.Default.Layers to "Overlay — Show post-call popup"
-        )
+            // Permission list with state icons
+            val items = listOf(
+                Triple(Manifest.permission.READ_PHONE_STATE, "Phone", Icons.Default.Phone),
+                Triple(Manifest.permission.READ_CALL_LOG, "Call Log", Icons.AutoMirrored.Filled.ListAlt),
+                Triple(Manifest.permission.READ_CONTACTS, "Contacts", Icons.Default.Person),
+                Triple(Manifest.permission.RECORD_AUDIO, "Microphone", Icons.Default.Mic)
+            )
 
-        permissionItems.forEach { (icon, text) ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = if (text.startsWith("Overlay") && !overlayGranted) {
-                        MaterialTheme.colorScheme.error
-                    } else if (runtimeGranted || (text.startsWith("Overlay") && overlayGranted)) {
-                        MaterialTheme.colorScheme.primary
+            items.forEach { (perm, label, icon) ->
+                val granted = ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = if (granted) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(label, modifier = Modifier.weight(1f), fontSize = 14.sp)
+                    if (granted) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(16.dp)
+                        )
                     } else {
-                        MaterialTheme.colorScheme.primary
+                        Icon(
+                            Icons.Default.Cancel,
+                            contentDescription = null,
+                            tint = Color(0xFFD32F2F),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
-                )
-                Spacer(Modifier.width(16.dp))
-                Text(
-                    text,
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                }
             }
-        }
 
-        Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(32.dp))
 
-        // Status text
-        Text(
-            statusText,
-            fontSize = 13.sp,
-            color = if (statusText.contains("denied") || statusText.contains("still needed")) 
-                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(Modifier.height(32.dp))
-
-        // Main action button — changes based on state
-        Button(
-            onClick = {
-                if (!runtimeGranted) {
-                    // Step 1: Request runtime permissions
-                    val ungrantedPermissions = requiredPermissions.filter {
-                        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-                    }.toTypedArray()
-
-                    if (ungrantedPermissions.isNotEmpty()) {
-                        multiplePermissionLauncher.launch(ungrantedPermissions)
+            Button(
+                onClick = {
+                    val missing = PermissionUtils.getMissingPermissions(context).toTypedArray()
+                    if (missing.isNotEmpty()) {
+                        launcher.launch(missing)
                     } else {
-                        // All runtime granted but state not updated
-                        runtimeGranted = true
-                        if (!Settings.canDrawOverlays(context)) {
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            context.startActivity(intent)
+                        if (!overlayGranted) {
+                            showOverlayStep = true
+                        } else {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Splash.route) { inclusive = true }
+                            }
                         }
                     }
-                } else if (!overlayGranted) {
-                    // Step 2: Request overlay permission
-                    val intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${context.packageName}")
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(if (runtimeGranted) "Continue" else "Grant Permissions")
+            }
+
+            if (requestCount > 0 || runtimeGranted) {
+                Spacer(Modifier.height(16.dp))
+                TextButton(
+                    onClick = {
+                        if (!overlayGranted) {
+                            showOverlayStep = true
+                        } else {
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(Screen.Splash.route) { inclusive = true }
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        if (runtimeGranted) "Next" else "Skip for now (Limited Mode)",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
                     )
-                    context.startActivity(intent)
-                } else {
-                    // All done — navigate
+                }
+            }
+        } else {
+            // ═══════════════════════════════════════════════════
+            // STEP 2: OVERLAY PERMISSION
+            // ═══════════════════════════════════════════════════
+            Icon(
+                imageVector = Icons.Default.Layers,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                "Display Over Other Apps",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                "SalesEdgeAI needs 'Display over other apps' permission to show the post-call classification popup. Without this, you'll need to open the app manually after each call.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp
+            )
+
+            Spacer(Modifier.height(48.dp))
+
+            Button(
+                onClick = {
+                    PermissionUtils.requestOverlayPermission(context)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Grant Overlay Permission")
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            TextButton(
+                onClick = {
                     navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.PermissionSetup.route) { inclusive = true }
+                        popUpTo(Screen.Splash.route) { inclusive = true }
                     }
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text(
-                text = when {
-                    !runtimeGranted -> "Grant Permissions"
-                    !overlayGranted -> "Grant Overlay Permission"
-                    else -> "Continue"
-                },
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        @Suppress("DEPRECATION")
-        TextButton(
-            onClick = {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.fromParts("package", context.packageName, null)
-                }
-                context.startActivity(intent)
+            ) {
+                Text(
+                    "Skip for now",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium
+                )
             }
-        ) {
-            Text("Open App Settings", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
         }
     }
 }

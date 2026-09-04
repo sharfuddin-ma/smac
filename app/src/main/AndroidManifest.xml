@@ -33,6 +33,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SalesEdgeAI">
 
+        <meta-data
+            android:name="android.content.APP_RESTRICTIONS"
+            android:resource="@xml/app_restrictions" />
+
         <service
             android:name=".service.CallRecordingService"
             android:enabled="true"

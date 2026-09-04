@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+    <restriction
+        android:key="device_imei"
+        android:title="@string/restriction_imei_title"
+        android:description="@string/restriction_imei_desc"
+        android:restrictionType="string"
+        android:defaultValue="" />
+    <restriction
+        android:key="device_imei2"
+        android:title="@string/restriction_imei2_title"
+        android:description="@string/restriction_imei2_desc"
+        android:restrictionType="string"
+        android:defaultValue="" />
+    <restriction
+        android:key="device_serial"
+        android:title="@string/restriction_serial_title"
+        android:description="@string/restriction_serial_desc"
+        android:restrictionType="string"
+        android:defaultValue="" />
+    <restriction
+        android:key="device_phone1"
+        android:title="@string/restriction_phone1_title"
+        android:description="@string/restriction_phone1_desc"
+        android:restrictionType="string"
+        android:defaultValue="" />
+    <restriction
+        android:key="device_phone2"
+        android:title="@string/restriction_phone2_title"
+        android:description="@string/restriction_phone2_desc"
+        android:restrictionType="string"
+        android:defaultValue="" />
+</restrictions>

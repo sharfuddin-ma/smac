@@ -1,3 +1,13 @@
 <resources>
     <string name="app_name">SalesEdgeAI</string>
+    <string name="restriction_imei_title">Device IMEI</string>
+    <string name="restriction_imei_desc">Primary IMEI pushed by MDM</string>
+    <string name="restriction_imei2_title">Device IMEI 2</string>
+    <string name="restriction_imei2_desc">Secondary IMEI for dual-SIM</string>
+    <string name="restriction_serial_title">Device Serial Number</string>
+    <string name="restriction_serial_desc">Serial number pushed by MDM</string>
+    <string name="restriction_phone1_title">Phone Number SIM 1</string>
+    <string name="restriction_phone1_desc">Phone number of SIM 1 pushed by MDM</string>
+    <string name="restriction_phone2_title">Phone Number SIM 2</string>
+    <string name="restriction_phone2_desc">Phone number of SIM 2 pushed by MDM</string>
 </resources>

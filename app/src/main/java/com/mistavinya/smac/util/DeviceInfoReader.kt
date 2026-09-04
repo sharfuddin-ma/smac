@@ -18,15 +18,42 @@ object DeviceInfoReader {
         val phoneNumber1: String,
         val phoneNumber2: String,
         val deviceModel: String,
-        val androidVersion: String
+        val androidVersion: String,
+        val source: String = "unknown"
     )
 
-    @SuppressLint("MissingPermission", "HardwareIds")
-    fun readAll(context: Context): DeviceInfo {
-        Log.i(TAG, "═══════════════════════════════════")
-        Log.i(TAG, "READING DEVICE INFO")
-        Log.i(TAG, "═══════════════════════════════════")
+    fun read(context: Context): DeviceInfo {
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+        
+        return when {
+            dpm.isDeviceOwnerApp(context.packageName) -> {
+                Log.i(TAG, "Path 1: Device Owner")
+                readDirectly(context).copy(source = "device_owner")
+            }
+            MdmConfigReader.hasConfig(context) -> {
+                Log.i(TAG, "Path 2: MDM Managed Config")
+                val mdmInfo = MdmConfigReader.readConfig(context)
+                enrichFromRuntime(context, mdmInfo)
+            }
+            else -> {
+                Log.i(TAG, "Path 3: Runtime Fallback")
+                readDirectly(context).copy(source = "runtime_fallback")
+            }
+        }.also { logResult(it) }
+    }
 
+    private fun enrichFromRuntime(context: Context, mdmInfo: DeviceInfo): DeviceInfo {
+        if (!PermissionUtils.areRuntimePermissionsGranted(context)) return mdmInfo
+        
+        val directInfo = readDirectly(context)
+        return mdmInfo.copy(
+            phoneNumber1 = mdmInfo.phoneNumber1.ifBlank { directInfo.phoneNumber1 },
+            phoneNumber2 = mdmInfo.phoneNumber2.ifBlank { directInfo.phoneNumber2 }
+        )
+    }
+
+    @SuppressLint("MissingPermission", "HardwareIds")
+    private fun readDirectly(context: Context): DeviceInfo {
         // Serial Number
         val serial = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -35,15 +62,10 @@ object DeviceInfoReader {
                 @Suppress("DEPRECATION")
                 Build.SERIAL
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Serial error: ${e.message}")
-            ""
-        }
-        Log.i(TAG, "  Serial: $serial")
+        } catch (e: Exception) { "" }
 
         // IMEI
         val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-
         val imei1 = try { 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) tm.getImei(0) ?: "" 
             else @Suppress("DEPRECATION") tm.deviceId ?: ""
@@ -53,9 +75,6 @@ object DeviceInfoReader {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) tm.getImei(1) ?: "" 
             else ""
         } catch (e: Exception) { "" }
-        
-        Log.i(TAG, "  IMEI 1: $imei1")
-        Log.i(TAG, "  IMEI 2: $imei2")
 
         // Phone Numbers
         var phone1 = ""
@@ -68,27 +87,19 @@ object DeviceInfoReader {
             if (subs != null) {
                 for (sub in subs) {
                     var number = ""
-
-                    // Android 13+ API
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         try { number = sm.getPhoneNumber(sub.subscriptionId) ?: "" } catch (_: Exception) {}
                     }
-
-                    // Fallback: subInfo.number
                     if (number.isBlank()) {
                         @Suppress("DEPRECATION")
                         number = sub.number ?: ""
                     }
-
-                    // Fallback: TelephonyManager.line1Number
                     if (number.isBlank()) {
                         try {
                             number = tm.createForSubscriptionId(sub.subscriptionId).line1Number ?: ""
                         } catch (_: Exception) {}
                     }
-
                     number = number.trim()
-
                     when (sub.simSlotIndex) {
                         0 -> phone1 = number
                         1 -> phone2 = number
@@ -98,12 +109,6 @@ object DeviceInfoReader {
         } catch (e: Exception) {
             Log.e(TAG, "Phone number error: ${e.message}")
         }
-
-        Log.i(TAG, "  Phone 1: ${phone1.ifBlank { "NOT AVAILABLE" }}")
-        Log.i(TAG, "  Phone 2: ${phone2.ifBlank { "NOT AVAILABLE" }}")
-        Log.i(TAG, "  Model: ${Build.MANUFACTURER} ${Build.MODEL}")
-        Log.i(TAG, "  Android: ${Build.VERSION.RELEASE}")
-        Log.i(TAG, "═══════════════════════════════════")
 
         return DeviceInfo(
             serialNumber = serial ?: "",
@@ -116,12 +121,15 @@ object DeviceInfoReader {
         )
     }
 
-    /**
-     * Read all device info and save to DataStore.
-     * Call this once in CallSyncApp.onCreate() after permissions are granted.
-     */
+    private fun logResult(info: DeviceInfo) {
+        Log.i(TAG, "Final Device Info (Source: ${info.source})")
+        Log.i(TAG, "  Serial: ${info.serialNumber}")
+        Log.i(TAG, "  IMEI 1: ${info.imei1}")
+        Log.i(TAG, "  Phone 1: ${info.phoneNumber1}")
+    }
+
     suspend fun readAndSave(context: Context): DeviceInfo {
-        val info = readAll(context)
+        val info = read(context)
         val store = SettingsDataStore(context)
 
         if (info.serialNumber.isNotBlank()) store.setSerialNumber(info.serialNumber)
@@ -131,8 +139,8 @@ object DeviceInfoReader {
         if (info.phoneNumber2.isNotBlank()) store.setPhoneNumber2(info.phoneNumber2)
         store.setDeviceModel(info.deviceModel)
         store.setAndroidVersion(info.androidVersion)
+        store.setDeviceInfoSource(info.source)
 
-        Log.i(TAG, "✅ All device info saved to DataStore")
         return info
     }
 }

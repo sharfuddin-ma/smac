@@ -12,4 +12,7 @@
 /captures
 .externalNativeBuild
 .cxx
-local.properties
+
+# Keystore files — NEVER push to git
+*.jks
+*.keystore

@@ -23,6 +23,7 @@ class SettingsDataStore(private val context: Context) {
         private val IMEI_2 = stringPreferencesKey("imei_2")
         private val DEVICE_MODEL = stringPreferencesKey("device_model")
         private val ANDROID_VERSION = stringPreferencesKey("android_version")
+        private val DEVICE_INFO_SOURCE = stringPreferencesKey("device_info_source")
     }
 
     val autoRecordEnabled: Flow<Boolean> = context.dataStore.data.map { it[KEY_AUTO_RECORD] ?: true }
@@ -37,6 +38,7 @@ class SettingsDataStore(private val context: Context) {
     val imei2: Flow<String> = context.dataStore.data.map { it[IMEI_2] ?: "" }
     val deviceModel: Flow<String> = context.dataStore.data.map { it[DEVICE_MODEL] ?: "" }
     val androidVersion: Flow<String> = context.dataStore.data.map { it[ANDROID_VERSION] ?: "" }
+    val deviceInfoSource: Flow<String> = context.dataStore.data.map { it[DEVICE_INFO_SOURCE] ?: "unknown" }
 
     suspend fun setAutoRecord(enabled: Boolean) {
         context.dataStore.edit { it[KEY_AUTO_RECORD] = enabled }
@@ -79,4 +81,5 @@ class SettingsDataStore(private val context: Context) {
     suspend fun setImei2(value: String) { context.dataStore.edit { it[IMEI_2] = value } }
     suspend fun setDeviceModel(value: String) { context.dataStore.edit { it[DEVICE_MODEL] = value } }
     suspend fun setAndroidVersion(value: String) { context.dataStore.edit { it[ANDROID_VERSION] = value } }
+    suspend fun setDeviceInfoSource(value: String) { context.dataStore.edit { it[DEVICE_INFO_SOURCE] = value } }
 }
